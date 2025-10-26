@@ -72,23 +72,25 @@ function mapCustomExtractorEntities(entities) {
   // Helper para buscar entidades
   const findEntity = (type) => entities.find(e => e.type === type);
   const findEntities = (type) => entities.filter(e => e.type === type);
+  
   const getText = (entity) => {
     if (!entity) return null;
     return entity.mentionText || entity.normalizedValue?.text || null;
   };
+  
   const getProperty = (entity, propType) => {
     if (!entity || !entity.properties) return null;
     const prop = entity.properties.find(p => p.type === propType);
     return getText(prop);
   };
 
-  // Extraer datos básicos
+  // ========== DATOS BÁSICOS ==========
   const nombreCompleto = getText(findEntity('nombre_completo')) || 
                          getText(findEntity('nombre')) ||
                          getText(findEntity('name'));
   
   const { nombres, apellidos } = dividirNombreCompleto(nombreCompleto);
-
+  
   const email = getText(findEntity('email')) || 
                 getText(findEntity('correo')) ||
                 getText(findEntity('correo_electronico'));
@@ -120,8 +122,11 @@ function mapCustomExtractorEntities(entities) {
   const region = getText(findEntity('region'));
   const ciudad = getText(findEntity('ciudad')) || getText(findEntity('city'));
   const comuna = getText(findEntity('comuna'));
+  
+  const estadoCivil = getText(findEntity('estado_civil')) || 
+                      getText(findEntity('marital_status'));
 
-  // Extraer experiencias (arrays)
+  // ========== EXPERIENCIAS ==========
   const experiencias = findEntities('experiencias')
     .concat(findEntities('experiencia'))
     .concat(findEntities('trabajo'))
@@ -129,39 +134,51 @@ function mapCustomExtractorEntities(entities) {
     .map(exp => ({
       empresa: getProperty(exp, 'empresa') || getProperty(exp, 'company') || getText(exp),
       cargo: getProperty(exp, 'cargo') || getProperty(exp, 'puesto') || getProperty(exp, 'position'),
-      area_trabajo: getProperty(exp, 'area'),
+      area_trabajo: getProperty(exp, 'area') || getProperty(exp, 'area_trabajo'),
+      tipo_cargo: getProperty(exp, 'tipo_cargo') || getProperty(exp, 'tipo'),
       descripcion: getProperty(exp, 'descripcion') || getProperty(exp, 'description'),
       ano_inicio: extraerAno(getProperty(exp, 'fecha_inicio') || getProperty(exp, 'start_date')),
       mes_inicio: extraerMes(getProperty(exp, 'fecha_inicio') || getProperty(exp, 'start_date')),
-      ano_fin: extraerAno(getProperty(exp, 'fecha_fin') || getProperty(exp, 'end_date')),
-      mes_fin: extraerMes(getProperty(exp, 'fecha_fin') || getProperty(exp, 'end_date')),
-      experiencia_laboral: true,
+      experiencia_laboral: 'Si',
     }));
 
-  // Extraer educación
+  // ========== EDUCACIÓN ==========
   const educaciones = findEntities('educacion')
     .concat(findEntities('education'))
     .concat(findEntities('estudios'))
-    .map(edu => ({
-      institucion: getProperty(edu, 'institucion') || getProperty(edu, 'institution') || getText(edu),
-      carrera: getProperty(edu, 'carrera') || getProperty(edu, 'titulo') || getProperty(edu, 'degree'),
-      estado: getProperty(edu, 'estado') || 'Completo',
-      ano_inicio: extraerAno(getProperty(edu, 'fecha_inicio') || getProperty(edu, 'start_date')),
-      ano_termino: extraerAno(getProperty(edu, 'fecha_fin') || getProperty(edu, 'end_date')),
-    }));
+    .map(edu => {
+      const institucion = getProperty(edu, 'institucion') || getProperty(edu, 'institution') || getText(edu);
+      const carrera = getProperty(edu, 'carrera') || getProperty(edu, 'titulo') || getProperty(edu, 'degree');
+      const tipo = getProperty(edu, 'tipo') || determinarTipoEducacion(carrera, institucion);
+      const estado = getProperty(edu, 'estado') || getProperty(edu, 'status') || 'Completa';
+      const pais = getProperty(edu, 'pais') || getProperty(edu, 'country');
+      const ciudad = getProperty(edu, 'ciudad') || getProperty(edu, 'city');
+      
+      return {
+        institucion,
+        carrera,
+        carrera_afin: getProperty(edu, 'carrera_afin'),
+        tipo,
+        estado,
+        pais,
+        ciudad,
+        ano_inicio: extraerAno(getProperty(edu, 'fecha_inicio') || getProperty(edu, 'start_date')),
+        ano_termino: extraerAno(getProperty(edu, 'fecha_fin') || getProperty(edu, 'end_date')),
+      };
+    });
 
-  // Extraer habilidades
+  // ========== HABILIDADES ==========
   const habilidades = findEntities('habilidades')
     .concat(findEntities('habilidad'))
     .concat(findEntities('skills'))
     .concat(findEntities('skill'))
     .map(skill => ({
       habilidad: getText(skill),
-      categoria: 'Técnica',
+      categoria: getProperty(skill, 'categoria') || categorizarHabilidad(getText(skill)),
       nivel: getProperty(skill, 'nivel') || 'Intermedio',
     }));
 
-  // Extraer idiomas
+  // ========== IDIOMAS ==========
   const idiomas = findEntities('idiomas')
     .concat(findEntities('idioma'))
     .concat(findEntities('languages'))
@@ -171,7 +188,7 @@ function mapCustomExtractorEntities(entities) {
       nivel: getProperty(lang, 'nivel') || getProperty(lang, 'proficiency') || 'Intermedio',
     }));
 
-  // Extraer cursos
+  // ========== CURSOS ==========
   const cursos = findEntities('cursos')
     .concat(findEntities('curso'))
     .concat(findEntities('certificaciones'))
@@ -182,6 +199,51 @@ function mapCustomExtractorEntities(entities) {
       ano_inicio: extraerAno(getProperty(curso, 'fecha') || getProperty(curso, 'date')),
       mes_inicio: extraerMes(getProperty(curso, 'fecha') || getProperty(curso, 'date')),
     }));
+
+  // ========== INCLUSIÓN LABORAL ==========
+  const discapacidad = getText(findEntity('discapacidad')) || 
+                       getText(findEntity('disability'));
+  
+  const inclusionLaboral = discapacidad ? {
+    discapacidad: discapacidad.toLowerCase().includes('si') || 
+                  discapacidad.toLowerCase().includes('yes') ? 'Si' : 'No',
+    registro_nacional: getText(findEntity('registro_nacional')),
+    pension_invalidez: getText(findEntity('pension_invalidez')),
+    ajuste_entrevista: getText(findEntity('ajuste_entrevista')),
+    tipo_discapacidad: getText(findEntity('tipo_discapacidad')),
+  } : null;
+
+  // ========== EMPRENDIMIENTO ==========
+  const emprendedor = getText(findEntity('emprendedor')) || 
+                      getText(findEntity('emprendimiento'));
+  
+  const emprendimiento = emprendedor ? {
+    emprendedor: emprendedor.toLowerCase().includes('si') || 
+                 emprendedor.toLowerCase().includes('yes') ? 'Si' : 'No',
+    interesado: getText(findEntity('interesado_emprendimiento')),
+    ano_inicio: extraerAno(getText(findEntity('inicio_emprendimiento'))),
+    mes_inicio: extraerMes(getText(findEntity('inicio_emprendimiento'))),
+    sector_emprendimiento: getText(findEntity('sector_emprendimiento')),
+  } : null;
+
+  // ========== PRETENSIONES (NUEVO) ==========
+  const disponibilidad = getText(findEntity('disponibilidad')) || 
+                         getText(findEntity('availability')) ||
+                         getText(findEntity('disponibilidad_laboral')) ||
+                         'Inmediata';
+  
+  const rentaEsperada = getText(findEntity('renta_esperada')) || 
+                        getText(findEntity('salario_esperado')) ||
+                        getText(findEntity('expected_salary')) ||
+                        getText(findEntity('pretension_renta'));
+  
+  const pretensiones = {
+    disponibilidad: disponibilidad,
+    renta_esperada: extraerMonto(rentaEsperada),
+  };
+
+  // ========== NIVEL EDUCACIONAL ==========
+  const nivelEducacional = determinarNivelEducacional(educaciones);
 
   return {
     freelancer: {
@@ -198,19 +260,19 @@ function mapCustomExtractorEntities(entities) {
       nacionalidad,
       direccion,
       region,
-      ciudad_freelancer: ciudad,
+      ciudad: ciudad,
       comuna,
-      estado_civil: null,
+      estado_civil: estadoCivil,
     },
+    inclusion_laboral: inclusionLaboral,
+    emprendimiento: emprendimiento,
     experiencias: experiencias.length > 0 ? experiencias : null,
     educaciones: educaciones.length > 0 ? educaciones : null,
+    nivel_educacional: nivelEducacional,
     habilidades: habilidades.length > 0 ? habilidades : null,
     idiomas: idiomas.length > 0 ? idiomas : null,
     cursos: cursos.length > 0 ? cursos : null,
-    pretensiones: {
-      disponibilidad: 'Inmediata',
-      renta_esperada: null,
-    },
+    pretensiones: pretensiones, // ✅ AHORA SE INCLUYE
   };
 }
 
@@ -277,6 +339,114 @@ function extraerMes(fechaStr) {
   }
   
   return null;
+}
+
+/**
+ * Extraer monto de renta esperada
+ */
+function extraerMonto(montoStr) {
+  if (!montoStr) return null;
+  
+  // Eliminar símbolos de moneda y separadores de miles
+  const numeroStr = montoStr.replace(/[$€£¥CLP\s.]/gi, '').replace(/,/g, '');
+  const numero = parseFloat(numeroStr);
+  
+  return !isNaN(numero) ? numero : null;
+}
+
+/**
+ * Determinar tipo de educación basado en carrera/institución
+ */
+function determinarTipoEducacion(carrera, institucion) {
+  if (!carrera && !institucion) return null;
+  
+  const texto = `${carrera} ${institucion}`.toLowerCase();
+  
+  if (texto.includes('universidad') || texto.includes('university') || 
+      texto.includes('ingenier') || texto.includes('licenciatura')) {
+    return 'Universidad';
+  }
+  if (texto.includes('postgrado') || texto.includes('magister') || 
+      texto.includes('master') || texto.includes('mba')) {
+    return 'Postgrado';
+  }
+  if (texto.includes('doctorado') || texto.includes('phd')) {
+    return 'Doctorado';
+  }
+  if (texto.includes('media') || texto.includes('secundaria') || 
+      texto.includes('high school')) {
+    return 'Educación media';
+  }
+  if (texto.includes('básica') || texto.includes('primaria') || 
+      texto.includes('elementary')) {
+    return 'Educación básica';
+  }
+  
+  return null;
+}
+
+/**
+ * Determinar nivel educacional más alto
+ */
+function determinarNivelEducacional(educaciones) {
+  if (!educaciones || educaciones.length === 0) return null;
+  
+  const jerarquia = {
+    'Doctorado': 5,
+    'Postgrado': 4,
+    'Universidad': 3,
+    'Media': 2,
+    'Basica': 1,
+  };
+  
+  let nivelMasAlto = null;
+  let valorMasAlto = 0;
+  
+  educaciones.forEach(edu => {
+    const tipo = edu.tipo;
+    if (tipo && jerarquia[tipo] > valorMasAlto) {
+      valorMasAlto = jerarquia[tipo];
+      nivelMasAlto = tipo;
+    }
+  });
+  
+  if (!nivelMasAlto) return null;
+  
+  // Determinar si está completo o incompleto
+  const educacionNivel = educaciones.find(e => e.tipo === nivelMasAlto);
+  const estado = educacionNivel?.estado === 'Incompleta' || 
+                 educacionNivel?.estado === 'Cursando' ? 'Incompleta' : 'Completa';
+  
+  return {
+    nivel_academico: nivelMasAlto,
+    estado: estado,
+  };
+}
+
+/**
+ * Categorizar habilidad automáticamente
+ */
+function categorizarHabilidad(habilidad) {
+  if (!habilidad) return 'Técnica';
+  
+  const texto = habilidad.toLowerCase();
+  
+  // Habilidades técnicas
+  if (texto.match(/(python|java|javascript|react|angular|vue|node|sql|css|html|php|ruby|c\+\+|aws|azure|docker|kubernetes)/i)) {
+    return 'Técnica';
+  }
+  
+  // Habilidades blandas
+  if (texto.match(/(liderazgo|comunicación|trabajo en equipo|resolución|creatividad|adaptabilidad|organización)/i)) {
+    return 'Blanda';
+  }
+  
+  // Diseño
+  if (texto.match(/(photoshop|illustrator|figma|sketch|diseño|ui|ux)/i)) {
+    return 'Diseño';
+  }
+  
+  return 'Técnica'; // Por defecto
 }
 
 module.exports = { parseCV };
