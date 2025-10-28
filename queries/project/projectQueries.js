@@ -23,7 +23,7 @@ const findAllProjectsWithPublications = async () => {
   return proyectos;
 };
 
-// Obtener proyecto por ID con todos sus detalles
+// Obtener proyecto por ID con todos sus detalles Y ESTADO DE PUBLICACIÓN
 const findProjectById = async (id_proyecto) => {
   const [rows] = await pool.query(`
     SELECT 
@@ -38,8 +38,13 @@ const findProjectById = async (id_proyecto) => {
       p.fecha_limite,
       p.ubicacion,
       p.tipo_contratacion,
-      p.metodologia_trabajo
+      p.metodologia_trabajo,
+      pp.id_publicacion,
+      pp.fecha_creacion,
+      pp.fecha_publicacion,
+      pp.estado_publicacion
     FROM proyecto p
+    LEFT JOIN publicacion_proyecto pp ON p.id_proyecto = pp.id_proyecto
     WHERE p.id_proyecto = ?
     LIMIT 1
   `, [id_proyecto]);
