@@ -19,7 +19,6 @@ const getAllFreelancers = async () => {
     FROM freelancer AS f
     JOIN antecedentes_personales AS ap ON f.id_freelancer = ap.id_freelancer
   `;
-
   const [freelancers] = await pool.query(query);
   return freelancers;
 };
@@ -32,6 +31,21 @@ const getFreelancerById = async (id_freelancer) => {
     "SELECT * FROM freelancer WHERE id_freelancer = ?",
     [id_freelancer]
   );
+  
+  return results.length > 0 ? results[0] : null;
+};
+
+/**
+ * Obtener freelancer por ID de usuario
+ */
+const getFreelancerByUserId = async (id_usuario) => {
+  const [results] = await pool.query(
+    "SELECT * FROM freelancer WHERE id_usuario = ?",
+    [id_usuario]
+  );
+  
+  console.log("getFreelancerByUserId - id_usuario:", id_usuario);
+  console.log("getFreelancerByUserId - results:", results);
   
   return results.length > 0 ? results[0] : null;
 };
@@ -113,5 +127,6 @@ const getPublicProfileData = async (id_freelancer) => {
 module.exports = {
   getAllFreelancers,
   getFreelancerById,
+  getFreelancerByUserId,
   getPublicProfileData
 };

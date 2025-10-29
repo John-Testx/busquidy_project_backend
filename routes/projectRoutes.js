@@ -10,7 +10,7 @@ const {
   createProject,
   deleteProject,
   getProjectsByUser,
-  releaseProjectPayment  // <- NUEVO
+  releaseProjectPayment
 } = require("../controllers/project/projectController");
 
 const {
@@ -18,6 +18,12 @@ const {
   updateProjectStatus,
   getAllPublications
 } = require("../controllers/project/publicationController");
+
+// Importar controlador de postulaciones
+const {
+  getPostulationsByProjectId,
+  getPostulationsByPublicationId
+} = require("../controllers/project/postulationController");
 
 // ============= RUTAS DE PROYECTOS =============
 router.get("/getProjects", getAllProjects);
@@ -27,12 +33,16 @@ router.post("/create-project", verifyToken, createProject);
 router.delete("/delete/:id_proyecto", deleteProject);
 router.get("/get/:id_usuario", getProjectsByUser);
 
-// ============= LIBERACIÓN DE PAGO (NUEVO) =============
+// ============= LIBERACIÓN DE PAGO =============
 router.post("/release-payment/:id_proyecto", verifyToken, releaseProjectPayment);
 
 // ============= RUTAS DE PUBLICACIONES =============
 router.put("/update-proyecto-state/:id_proyecto", updateProjectState);
 router.put("/api/proyecto/estado/:id_proyecto", updateProjectStatus);
 router.get("/publicacion", getAllPublications);
+
+// ============= RUTAS DE POSTULACIONES (NUEVO) =============
+router.get("/:id_proyecto/postulaciones", getPostulationsByProjectId);
+router.get("/publicacion/:id_publicacion/postulaciones", getPostulationsByPublicationId);
 
 module.exports = router;
