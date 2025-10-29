@@ -16,6 +16,7 @@ const availabilityRoutes = require('./availabilityRoutes');
 // ============================================
 // RUTAS DE PERFIL
 // ============================================
+
 // Verificar si existe perfil
 router.get("/get/:id_usuario", profileController.checkProfileExists);
 
@@ -31,6 +32,7 @@ router.put("/update/:id", profileController.updateProfileLegacy);
 // ============================================
 // RUTAS DE SECCIONES DEL PERFIL
 // ============================================
+
 // Actualizar sección específica del perfil
 router.put("/update-freelancer/:id_usuario/:section", sectionsController.updateSection);
 
@@ -43,15 +45,20 @@ router.delete("/delete-idioma-habilidad/:id_usuario/:seccion/:id", sectionsContr
 // ============================================
 // RUTAS DE BÚSQUEDA Y LISTADO
 // ============================================
+
 // Listar todos los freelancers
 router.get("/list", searchController.listFreelancers);
 
-// Obtener perfil público de un freelancer específico
+// Obtener perfil público de un freelancer por ID de usuario (NUEVA RUTA)
+router.get("/perfil-by-user/:id_usuario", searchController.getFreelancerPublicProfileByUserId);
+
+// Obtener perfil público de un freelancer por ID de freelancer
 router.get("/freelancer-perfil/:id", searchController.getFreelancerPublicProfile);
 
 // ============================================
 // RUTAS DE POSTULACIONES
 // ============================================
+
 // Crear postulación a un proyecto
 router.post("/postulacion/:id_publicacion", applicationController.createApplication);
 
@@ -64,16 +71,14 @@ router.delete("/delete-postulacion/:id_postulacion", applicationController.delet
 // ============================================
 // RUTAS DE CV
 // ============================================
+
 // Subir y procesar CV
 router.post("/upload-cv", uploadCV.single("cv"), cvController.uploadCV);
 
 // Obtener URL del CV
 router.get("/freelancer/:id/cv", cvController.getCVUrl);
 
-
 // Rutas para la gestión de disponibilidad del freelancer
 router.use('/availability', availabilityRoutes);
-
-
 
 module.exports = router;
