@@ -106,6 +106,23 @@ async function addReview(req, res) {
     );
 
     await connection.commit();
+    // ✅ AGREGAR NOTIFICACIÓN DE RESEÑA
+    const { notificarNuevaResenaRecibida } = require("../../services/notificationService");
+    const { getUserById } = require("../../queries/user/userQueries");
+
+    // Obtener el id_usuario del calificado
+    const usuarioCalificado = await getUserById(id_calificado);
+    if (usuarioCalificado && usuarioCalificado.length > 0) {
+      const nombreQuienResena = req.user.nombre || req.user.correo || "Un usuario";
+      await notificarNuevaResenaRecibida(
+        usuarioCalificado[0].id_usuario,
+        nombreQuienResena,
+        calificacion,
+        null, // o el ID de la reseña si lo quieres incluir
+        connection
+      );
+    }
+
     res.status(201).json({ message: "Reseña agregada exitosamente." });
 
   } catch (err) {

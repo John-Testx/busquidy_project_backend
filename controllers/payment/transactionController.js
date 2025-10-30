@@ -225,6 +225,35 @@ const commitTransaction = async (req, res) => {
       // ✅ Actualizar estado en BD
       await updateWebpayTransactionStatus(token, status, response.response_code);
       await connection.commit();
+      // ✅ AGREGAR NOTIFICACIÓN DE PAGO EXITOSO
+      if (status === 'APPROVED') {
+        const { notificarProyectoPagoExitoso } = require("../../services/notificationService");
+        
+        // Obtener datos del proyecto
+        const [proyectoData] = await connection.query(
+          "SELECT p.nombre_proyecto, p.id_empresa FROM proyecto p WHERE p.id_proyecto = ?",
+          [idProyecto]
+        );
+        
+        if (proyectoData && proyectoData.length > 0) {
+          const nombreProyecto = proyectoData[0].nombre_proyecto;
+          
+          // Obtener id_usuario de la empresa
+          const [empresaData] = await connection.query(
+            "SELECT id_usuario FROM empresa WHERE id_empresa = ?",
+            [proyectoData[0].id_empresa]
+          );
+          
+          if (empresaData && empresaData.length > 0) {
+            await notificarProyectoPagoExitoso(
+              empresaData[0].id_usuario,
+              nombreProyecto,
+              idProyecto,
+              connection
+            );
+          }
+        }
+      }
       responseSent = true;
 
       console.log('✅ Pago de proyecto procesado exitosamente');
@@ -261,6 +290,20 @@ const commitTransaction = async (req, res) => {
 
       await updateWebpayTransactionStatus(token, status, response.response_code);
       await connection.commit();
+      // ✅ AGREGAR NOTIFICACIÓN DE SUSCRIPCIÓN
+      if (status === 'APPROVED') {
+        const { notificarSuscripcionExitosa } = require("../../services/notificationService");
+        const { getPlanById } = require("../../queries/payment/planQueries");
+        
+        const planData = await getPlanById(planRaw);
+        if (planData) {
+          await notificarSuscripcionExitosa(
+            idUsuario,
+            planData.nombre,
+            connection
+          );
+        }
+      }
       responseSent = true;
 
       return res.json({

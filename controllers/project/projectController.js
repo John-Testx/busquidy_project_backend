@@ -4,6 +4,9 @@ const { getEmpresaByUserId } = require("../../queries/empresa/empresaQueries.js"
 
 const {getUserById} = require("../../queries/user/userQueries");
 const pool = require("../../db");
+const { notificarPostulacionRecibida, notificarNuevaPostulacion } = require("../../services/notificationService");
+const { getPostulacionData } = require("../../queries/notification/notificationHelperQueries");
+
 
 /**
  * Controlador de gestión de proyectos
@@ -379,6 +382,250 @@ const releaseProjectPayment = async (req, res) => {
   }
 };
 
+/**
+ * Controlador de postulaciones
+ */
+
+// ✅ NUEVA FUNCIÓN: Crear postulación
+const crearPostulacion = async (req, res) => {
+  const { id_publicacion } = req.body;
+  const { id_usuario } = req.user; // Usuario freelancer autenticado
+  
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Obtener id_freelancer del usuario
+    const [freelancer] = await connection.query(
+      "SELECT id_freelancer FROM freelancer WHERE id_usuario = ?",
+      [id_usuario]
+    );
+
+    if (!freelancer || freelancer.length === 0) {
+      return res.status(404).json({ error: "Freelancer no encontrado" });
+    }
+
+    const id_freelancer = freelancer[0].id_freelancer;
+
+    // Verificar que no haya postulado antes
+    const [existente] = await connection.query(
+      "SELECT id_postulacion FROM postulacion WHERE id_publicacion = ? AND id_freelancer = ?",
+      [id_publicacion, id_freelancer]
+    );
+
+    if (existente && existente.length > 0) {
+      return res.status(409).json({ error: "Ya has postulado a este proyecto" });
+    }
+
+    // Insertar postulación
+    const [result] = await connection.query(
+      `INSERT INTO postulacion (id_publicacion, id_freelancer, estado_postulacion) 
+       VALUES (?, ?, 'pendiente')`,
+      [id_publicacion, id_freelancer]
+    );
+
+    const id_postulacion = result.insertId;
+
+    // ✅ OBTENER DATOS PARA NOTIFICACIONES
+    const [proyecto] = await connection.query(
+      `SELECT p.nombre_proyecto, p.id_empresa, e.id_usuario as id_usuario_empresa
+       FROM publicacion_proyecto pp
+       INNER JOIN proyecto p ON pp.id_proyecto = p.id_proyecto
+       INNER JOIN empresa e ON p.id_empresa = e.id_empresa
+       WHERE pp.id_publicacion = ?`,
+      [id_publicacion]
+    );
+
+    if (proyecto && proyecto.length > 0) {
+      const nombreProyecto = proyecto[0].nombre_proyecto;
+      const idUsuarioEmpresa = proyecto[0].id_usuario_empresa;
+
+      // Obtener nombre del freelancer
+      const [freelancerData] = await connection.query(
+        `SELECT CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_completo
+         FROM antecedentes_personales ap
+         WHERE ap.id_freelancer = ?`,
+        [id_freelancer]
+      );
+
+      const nombreFreelancer = freelancerData[0]?.nombre_completo || "Freelancer";
+
+      // ✅ NOTIFICAR AL FREELANCER
+      await notificarPostulacionRecibida(
+        id_usuario,
+        nombreProyecto,
+        id_publicacion,
+        connection
+      );
+
+      // ✅ NOTIFICAR A LA EMPRESA
+      await notificarNuevaPostulacion(
+        idUsuarioEmpresa,
+        nombreFreelancer,
+        nombreProyecto,
+        id_postulacion,
+        connection
+      );
+    }
+
+    await connection.commit();
+    res.status(201).json({ 
+      message: "Postulación creada exitosamente",
+      id_postulacion 
+    });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Error al crear postulación:", error);
+    res.status(500).json({ error: "Error al crear la postulación" });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+// ✅ NUEVA FUNCIÓN: Aceptar postulación
+const aceptarPostulacion = async (req, res) => {
+  const { id_postulacion } = req.params;
+  
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Actualizar estado de la postulación
+    await connection.query(
+      "UPDATE postulacion SET estado_postulacion = 'aceptada' WHERE id_postulacion = ?",
+      [id_postulacion]
+    );
+
+    // ✅ OBTENER DATOS PARA NOTIFICACIÓN
+    const postulacionData = await getPostulacionData(id_postulacion);
+
+    if (postulacionData) {
+      // ✅ NOTIFICAR AL FREELANCER
+      await notificarPostulacionAceptada(
+        postulacionData.id_usuario_freelancer,
+        postulacionData.nombre_proyecto,
+        postulacionData.id_publicacion,
+        connection
+      );
+    }
+
+    await connection.commit();
+    res.json({ message: "Postulación aceptada exitosamente" });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Error al aceptar postulación:", error);
+    res.status(500).json({ error: "Error al aceptar la postulación" });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+// ✅ NUEVA FUNCIÓN: Rechazar postulación
+const rechazarPostulacion = async (req, res) => {
+  const { id_postulacion } = req.params;
+  
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Actualizar estado de la postulación
+    await connection.query(
+      "UPDATE postulacion SET estado_postulacion = 'rechazada' WHERE id_postulacion = ?",
+      [id_postulacion]
+    );
+
+    // ✅ OBTENER DATOS PARA NOTIFICACIÓN
+    const postulacionData = await getPostulacionData(id_postulacion);
+
+    if (postulacionData) {
+      // ✅ NOTIFICAR AL FREELANCER
+      const { notificarPostulacionRechazada } = require("../../services/notificationService");
+      await notificarPostulacionRechazada(
+        postulacionData.id_usuario_freelancer,
+        postulacionData.nombre_proyecto,
+        connection
+      );
+    }
+
+    await connection.commit();
+    res.json({ message: "Postulación rechazada" });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Error al rechazar postulación:", error);
+    res.status(500).json({ error: "Error al rechazar la postulación" });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+// Obtener postulaciones por ID de proyecto (YA EXISTENTE)
+const getPostulationsByProjectId = async (req, res) => {
+  const { id_proyecto } = req.params;
+
+  try {
+    const postulations = await postulationQueries.findPostulationsByProjectId(id_proyecto);
+    
+    const formattedPostulations = postulations.map(post => ({
+      id_postulacion: post.id_postulacion,
+      id_usuario: post.id_usuario,
+      nombre: `${post.nombres || ''} ${post.apellidos || ''}`.trim() || 'Nombre no disponible',
+      titulo_profesional: post.titulo_profesional || post.ultimo_cargo || 'Sin título especificado',
+      biografia: post.ultima_empresa ? `Última experiencia en ${post.ultima_empresa}` : '',
+      tarifa_hora: post.renta_esperada || 0,
+      experiencia_anios: 0,
+      correo: post.correo_contacto || '',
+      telefono: post.telefono_contacto || '',
+      fecha_postulacion: post.fecha_postulacion,
+      estado_postulacion: post.estado_postulacion
+    }));
+
+    res.json(formattedPostulations);
+  } catch (error) {
+    console.error("Error al obtener postulaciones:", error);
+    res.status(500).json({ 
+      error: "Error al obtener postulaciones",
+      mensaje: error.message 
+    });
+  }
+};
+
+// Obtener postulaciones por ID de publicación (YA EXISTENTE)
+const getPostulationsByPublicationId = async (req, res) => {
+  const { id_publicacion } = req.params;
+
+  try {
+    const postulations = await postulationQueries.findPostulationsByPublicationId(id_publicacion);
+    
+    const formattedPostulations = postulations.map(post => ({
+      id_postulacion: post.id_postulacion,
+      id_usuario: post.id_usuario,
+      nombre: `${post.nombres || ''} ${post.apellidos || ''}`.trim() || 'Nombre no disponible',
+      titulo_profesional: post.titulo_profesional || post.ultimo_cargo || 'Sin título especificado',
+      biografia: post.ultima_empresa ? `Última experiencia en ${post.ultima_empresa}` : '',
+      tarifa_hora: post.renta_esperada || 0,
+      experiencia_anios: 0,
+      correo: post.correo_contacto || '',
+      telefono: post.telefono_contacto || '',
+      fecha_postulacion: post.fecha_postulacion,
+      estado_postulacion: post.estado_postulacion
+    }));
+
+    res.json(formattedPostulations);
+  } catch (error) {
+    console.error("Error al obtener postulaciones:", error);
+    res.status(500).json({ 
+      error: "Error al obtener postulaciones",
+      mensaje: error.message 
+    });
+  }
+};
+
 module.exports = {
   getAllProjects,
   getProjectById,
@@ -386,5 +633,8 @@ module.exports = {
   createProject,
   deleteProject,
   getProjectsByUser,
-  releaseProjectPayment  
+  releaseProjectPayment,
+  crearPostulacion,      
+  aceptarPostulacion,      
+  rechazarPostulacion,   
 };

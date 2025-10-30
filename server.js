@@ -16,7 +16,9 @@ const { createMessage } = require("./queries/chat/chatQueries");
 
 const { testDbConnection, ensureUploadDirectories } = require("./dbTest");
 
-
+// ✅ IMPORTAR SERVICIO DE NOTIFICACIONES
+const { notificarNuevoMensaje } = require("./services/notificationService");
+const pool = require("./db");
 
 const app = express();
 
@@ -152,18 +154,26 @@ const io = new socketIo.Server(httpServer, {
 
 let connectedUsers = 0;
 
+// ✅ MAPA PARA TRACKEAR USUARIOS CONECTADOS (para notificaciones en tiempo real)
+const userSocketMap = new Map(); // Map<userId, socketId>
+
+
 // ==================================
 
 
-
 io.on("connection", (socket) => {
-
-  // console.log("✅ Nuevo cliente conectado:", socket.id);
-
   connectedUsers++;
-
   io.emit("usersCount", connectedUsers);
 
+   // ✅ REGISTRAR USUARIO AL CONECTARSE
+  socket.on('register_user', (userId) => {
+    if (userId) {
+      userSocketMap.set(userId, socket.id);
+      socket.userId = userId;
+      socket.join(`user_${userId}`); // Unir a sala personal para notificaciones
+      console.log(`✅ Usuario ${userId} registrado con socket ${socket.id}`);
+    }
+  });
 
 
   // ==================== LÓGICA DE WEBRTC ====================
@@ -246,16 +256,91 @@ io.on("connection", (socket) => {
     try {
       const { id_conversation, id_sender, message_text } = data;
       
+      // Validación
+      if (!message_text || message_text.trim() === '') {
+        socket.emit('message_error', { error: 'El mensaje no puede estar vacío' });
+        return;
+      }
+
       // 1. Guardar el mensaje en la base de datos
       const newMessage = await createMessage(id_conversation, id_sender, message_text);
 
       // 2. Emitir el mensaje a todos en la sala (incluido el remitente)
       if (newMessage) {
         io.to(id_conversation).emit('receive_message', newMessage);
-        console.log(`Mensaje emitido a la sala ${id_conversation}`);
+        console.log(`📨 Mensaje emitido a la sala ${id_conversation}`);
+
+        // ✅ 3. CREAR NOTIFICACIÓN
+        try {
+          // Obtener el receptor del mensaje
+          const [conversacion] = await pool.query(
+            "SELECT id_user_one, id_user_two FROM conversations WHERE id_conversation = ?",
+            [id_conversation]
+          );
+
+          if (conversacion && conversacion.length > 0) {
+            const id_receptor = conversacion[0].id_user_one === id_sender
+              ? conversacion[0].id_user_two
+              : conversacion[0].id_user_one;
+
+            // Obtener nombre del remitente para la notificación
+            const [remitente] = await pool.query(
+              `SELECT u.correo, 
+                      COALESCE(
+                          CONCAT(ap.nombres, ' ', ap.apellidos),
+                          emp.nombre_empresa,
+                          u.correo
+                      ) as nombre_display
+               FROM usuario u
+               LEFT JOIN freelancer f ON u.id_usuario = f.id_usuario
+               LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
+               LEFT JOIN empresa e ON u.id_usuario = e.id_usuario
+               LEFT JOIN empresa emp ON e.id_empresa = emp.id_empresa
+               WHERE u.id_usuario = ?`,
+              [id_sender]
+            );
+
+            const nombreRemitente = remitente[0]?.nombre_display || "Un usuario";
+
+            // Crear la notificación en la BD
+            await notificarNuevoMensaje(
+              id_receptor,
+              nombreRemitente,
+              id_conversation
+            );
+
+            // ✅ 4. EMITIR NOTIFICACIÓN EN TIEMPO REAL AL RECEPTOR
+            io.to(`user_${id_receptor}`).emit('new_notification', {
+              tipo: 'nuevo_mensaje',
+              mensaje: `Tienes un nuevo mensaje de '${nombreRemitente}'.`,
+              enlace: `/chat/${id_conversation}`,
+              fecha: new Date()
+            });
+
+            console.log(`🔔 Notificación enviada al usuario ${id_receptor}`);
+          }
+        } catch (notifError) {
+          console.error("❌ Error al crear notificación:", notifError);
+          // No fallar el envío del mensaje si la notificación falla
+        }
       }
     } catch (error) {
-      console.error("Error al procesar el mensaje:", error);
+      console.error("❌ Error al procesar el mensaje:", error);
+      socket.emit('message_error', { error: 'Error al enviar el mensaje' });
+    }
+  });
+
+   // ✅ NUEVO: Marcar conversación como vista (opcional)
+  socket.on('mark_conversation_as_seen', async (data) => {
+    try {
+      const { id_conversation, id_usuario } = data;
+      
+      // Podrías actualizar un campo en la BD para indicar que vio los mensajes
+      // o marcar las notificaciones como leídas
+      
+      console.log(`Usuario ${id_usuario} vio la conversación ${id_conversation}`);
+    } catch (error) {
+      console.error("Error al marcar como visto:", error);
     }
   });
   
@@ -277,7 +362,11 @@ io.on("connection", (socket) => {
 
     io.emit("usersCount", connectedUsers);
 
-
+    // ✅ ELIMINAR USUARIO DEL MAPA
+    if (socket.userId) {
+      userSocketMap.delete(socket.userId);
+      console.log(`❌ Usuario ${socket.userId} desconectado`);
+    }
 
     if (socket.roomId) {
 
