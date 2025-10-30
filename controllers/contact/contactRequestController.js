@@ -8,7 +8,10 @@ const {
   notificarSolicitudEntrevistaRechazada,
   notificarSolicitudEntrevistaReprogramar
 } = require("../../services/notificationService");
-const { getSolicitudContactoData } = require("../../queries/notification/notificationHelperQueries");
+const { 
+  getSolicitudContactoData,
+  getReceptorDataForContactRequest // ✅ AÑADIDO
+} = require("../../queries/notification/notificationHelperQueries");
 
 /**
  * Controlador de solicitudes de contacto (chat/entrevista)
@@ -36,28 +39,18 @@ const crearSolicitud = async (req, res) => {
     await connection.beginTransaction();
 
     // Obtener datos de la postulación
-    const [postulacion] = await connection.query(
-      `SELECT po.id_freelancer, f.id_usuario as id_usuario_freelancer,
-              CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_freelancer,
-              p.nombre_proyecto, emp.nombre_empresa
-       FROM postulacion po
-       INNER JOIN freelancer f ON po.id_freelancer = f.id_freelancer
-       INNER JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
-       INNER JOIN publicacion_proyecto pp ON po.id_publicacion = pp.id_publicacion
-       INNER JOIN proyecto p ON pp.id_proyecto = p.id_proyecto
-       INNER JOIN empresa e ON p.id_empresa = e.id_empresa
-       INNER JOIN empresa emp ON e.id_empresa = emp.id_empresa
-       WHERE po.id_postulacion = ?`,
-      [id_postulacion]
-    );
+    const receptorData = await getReceptorDataForContactRequest(id_postulacion, connection);
 
-    if (!postulacion || postulacion.length === 0) {
+    if (!receptorData) {
+      await connection.rollback();
       return res.status(404).json({ error: "Postulación no encontrada" });
     }
 
-    const id_receptor = postulacion[0].id_usuario_freelancer;
-    const nombreEmpresa = postulacion[0].nombre_empresa;
-    const nombreProyecto = postulacion[0].nombre_proyecto;
+    const { 
+      id_usuario_receptor, 
+      nombre_empresa, 
+      nombre_proyecto 
+    } = receptorData;
 
     // Insertar solicitud
     const [result] = await connection.query(
@@ -65,32 +58,56 @@ const crearSolicitud = async (req, res) => {
        (id_postulacion, id_solicitante, id_receptor, tipo_solicitud, estado_solicitud, 
         fecha_entrevista_sugerida, mensaje_solicitud)
        VALUES (?, ?, ?, ?, 'pendiente', ?, ?)`,
-      [id_postulacion, id_usuario, id_receptor, tipo_solicitud, 
+      [id_postulacion, id_usuario, id_usuario_receptor, tipo_solicitud, 
        fecha_entrevista_sugerida || null, mensaje_solicitud || null]
     );
 
     const id_solicitud = result.insertId;
 
-    // ✅ NOTIFICAR AL FREELANCER
+    // ✅ CREAR NOTIFICACIÓN EN BASE DE DATOS
     if (tipo_solicitud === 'chat') {
       await notificarSolicitudChatRecibida(
-        id_receptor,
-        nombreEmpresa,
+        id_usuario_receptor,
+        nombre_empresa,
         id_solicitud,
         connection
       );
     } else if (tipo_solicitud === 'entrevista') {
       await notificarSolicitudEntrevistaRecibida(
-        id_receptor,
-        nombreEmpresa,
-        nombreProyecto,
+        id_usuario_receptor,
+        nombre_empresa,
+        nombre_proyecto,
         fecha_entrevista_sugerida,
         id_solicitud,
         connection
       );
     }
 
+    // ✅ COMMIT ANTES DE EMITIR SOCKET
     await connection.commit();
+
+    // ✅ EMITIR NOTIFICACIÓN EN TIEMPO REAL VIA SOCKET.IO
+    try {
+      const io = req.app.get('socketio');
+      
+      if (io) {
+        const notificacionRealTime = {
+          tipo: tipo_solicitud === 'chat' ? 'solicitud_chat_recibida' : 'solicitud_entrevista_recibida',
+          mensaje: tipo_solicitud === 'chat' 
+            ? `La Empresa '${nombre_empresa}' quiere chatear contigo sobre tu postulación.`
+            : `'${nombre_empresa}' te ha invitado a una entrevista para el proyecto '${nombre_proyecto}'.`,
+          enlace: `/solicitudes/${id_solicitud}`,
+          fecha: new Date()
+        };
+
+        io.to(`user_${id_usuario_receptor}`).emit('new_notification', notificacionRealTime);
+        console.log(`🔔 Notificación de solicitud ${tipo_solicitud} enviada al usuario ${id_usuario_receptor}`);
+      }
+    } catch (socketError) {
+      // No fallar la operación si el socket falla
+      console.error("⚠️ Error al emitir notificación por socket:", socketError);
+    }
+
     res.status(201).json({ 
       message: "Solicitud creada exitosamente",
       id_solicitud 
@@ -137,7 +154,6 @@ const responderSolicitud = async (req, res) => {
       // Notificar a la empresa según el tipo de respuesta
       if (solicitudData.tipo_solicitud === 'chat') {
         if (respuesta === 'aceptada') {
-          // Aquí podrías crear la conversación automáticamente
           await notificarSolicitudChatAceptada(
             idUsuarioEmpresa,
             nombreFreelancer,
@@ -177,7 +193,60 @@ const responderSolicitud = async (req, res) => {
       }
     }
 
+    // ✅ COMMIT ANTES DE EMITIR SOCKET
     await connection.commit();
+
+    // ✅ EMITIR NOTIFICACIÓN EN TIEMPO REAL VIA SOCKET.IO
+    if (solicitudData) {
+      try {
+        const io = req.app.get('socketio');
+        
+        if (io) {
+          let tipoNotificacion = '';
+          let mensajeNotificacion = '';
+          let enlaceNotificacion = null;
+
+          if (solicitudData.tipo_solicitud === 'chat') {
+            if (respuesta === 'aceptada') {
+              tipoNotificacion = 'solicitud_chat_aceptada';
+              mensajeNotificacion = `'${solicitudData.nombre_freelancer}' aceptó tu solicitud de chat. Ya pueden conversar.`;
+              enlaceNotificacion = `/chat/${null}`; // Actualizar cuando se cree la conversación
+            } else if (respuesta === 'rechazada') {
+              tipoNotificacion = 'solicitud_chat_rechazada';
+              mensajeNotificacion = `'${solicitudData.nombre_freelancer}' rechazó tu solicitud de chat.`;
+            }
+          } else if (solicitudData.tipo_solicitud === 'entrevista') {
+            if (respuesta === 'aceptada') {
+              tipoNotificacion = 'solicitud_entrevista_aceptada';
+              mensajeNotificacion = `'${solicitudData.nombre_freelancer}' aceptó tu invitación a la entrevista.`;
+              enlaceNotificacion = `/entrevistas/${null}`; // Actualizar cuando se cree la entrevista
+            } else if (respuesta === 'rechazada') {
+              tipoNotificacion = 'solicitud_entrevista_rechazada';
+              mensajeNotificacion = `'${solicitudData.nombre_freelancer}' rechazó tu invitación a la entrevista.`;
+            } else if (respuesta === 'reprogramar') {
+              tipoNotificacion = 'solicitud_entrevista_reprogramar';
+              mensajeNotificacion = `'${solicitudData.nombre_freelancer}' ha sugerido una nueva fecha para la entrevista.`;
+              enlaceNotificacion = `/solicitudes/${id_solicitud}`;
+            }
+          }
+
+          if (tipoNotificacion) {
+            const notificacionRealTime = {
+              tipo: tipoNotificacion,
+              mensaje: mensajeNotificacion,
+              enlace: enlaceNotificacion,
+              fecha: new Date()
+            };
+
+            io.to(`user_${solicitudData.id_solicitante}`).emit('new_notification', notificacionRealTime);
+            console.log(`🔔 Notificación de respuesta de solicitud enviada al usuario ${solicitudData.id_solicitante}`);
+          }
+        }
+      } catch (socketError) {
+        console.error("⚠️ Error al emitir notificación por socket:", socketError);
+      }
+    }
+
     res.json({ message: "Respuesta registrada exitosamente" });
 
   } catch (error) {

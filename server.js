@@ -152,6 +152,9 @@ const io = new socketIo.Server(httpServer, {
 
 });
 
+// ✅ HACER IO DISPONIBLE PARA LAS RUTAS
+app.set('socketio', io);
+
 let connectedUsers = 0;
 
 // ✅ MAPA PARA TRACKEAR USUARIOS CONECTADOS (para notificaciones en tiempo real)

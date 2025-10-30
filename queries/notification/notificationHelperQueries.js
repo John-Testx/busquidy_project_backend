@@ -120,6 +120,33 @@ const getSolicitudContactoData = async (id_solicitud) => {
   return rows.length > 0 ? rows[0] : null;
 };
 
+/**
+ * Obtener datos de receptor y contexto para una solicitud de contacto recién creada
+ * @param {number} id_postulacion - ID de la postulación
+ * @param {Object} connection - Conexión de BD (para usar en transacciones)
+ * @returns {Promise<Object|null>} Datos del receptor y contexto
+ */
+const getReceptorDataForContactRequest = async (id_postulacion, connection = pool) => {
+  const [rows] = await connection.query(
+    `SELECT 
+      f.id_usuario as id_usuario_receptor,
+      CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_freelancer,
+      emp.nombre_empresa,
+      p.nombre_proyecto,
+      pp.id_publicacion
+     FROM postulacion po
+     INNER JOIN freelancer f ON po.id_freelancer = f.id_freelancer
+     INNER JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
+     INNER JOIN publicacion_proyecto pp ON po.id_publicacion = pp.id_publicacion
+     INNER JOIN proyecto p ON pp.id_proyecto = p.id_proyecto
+     INNER JOIN empresa e ON p.id_empresa = e.id_empresa
+     INNER JOIN empresa emp ON e.id_empresa = emp.id_empresa
+     WHERE po.id_postulacion = ?`,
+    [id_postulacion]
+  );
+  return rows.length > 0 ? rows[0] : null;
+};
+
 module.exports = {
   getProjectNameById,
   getEmpresaNameByUserId,
@@ -128,4 +155,5 @@ module.exports = {
   getUserIdByEmpresaId,
   getPostulacionData,
   getSolicitudContactoData,
+  getReceptorDataForContactRequest,
 };
