@@ -13,7 +13,7 @@ const bodyParser = require("body-parser");
 const routes = require("./routes");
 
 const { createMessage } = require("./queries/chat/chatQueries"); 
-
+const db = require('./db');
 const { testDbConnection, ensureUploadDirectories } = require("./dbTest");
 
 
@@ -107,9 +107,8 @@ app.use("/api", routes);
 // ==================== VERIFICACIONES INICIALES ====================
 
 (async () => {
-
+  await db.initialize();
   await testDbConnection();
-
   ensureUploadDirectories();
 
 })();

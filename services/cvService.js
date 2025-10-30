@@ -4,7 +4,7 @@ require('dotenv').config();
 
 // Configuración del cliente
 const client = new DocumentProcessorServiceClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+  keyFilename: process.env.DOCAI_ACCOUNT,
 });
 
 // Construir el nombre del procesador (tu Custom Extractor)

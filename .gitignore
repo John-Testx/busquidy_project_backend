@@ -1,5 +1,11 @@
 /node_modules
 .env
+
+
+client-cert.pem
+client-key.pem
+server-ca.pem
+db-connection.js
 busquidy-cv-c12af69a4a2f.json
 busquidy-cv-d4f47628ee3f.json
 .pem
