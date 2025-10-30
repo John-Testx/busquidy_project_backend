@@ -9,7 +9,7 @@ const pool = require("../../db");
  */
 const getProjectNameById = async (id_proyecto) => {
   const [rows] = await pool.query(
-    "SELECT nombre_proyecto FROM proyecto WHERE id_proyecto = ?",
+    "SELECT titulo as nombre_proyecto FROM proyecto WHERE id_proyecto = ?",
     [id_proyecto]
   );
   return rows.length > 0 ? rows[0].nombre_proyecto : "Proyecto";
@@ -76,7 +76,7 @@ const getPostulacionData = async (id_postulacion) => {
       f.id_usuario as id_usuario_freelancer,
       CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_freelancer,
       p.id_proyecto,
-      p.nombre_proyecto,
+      p.titulo as nombre_proyecto,
       p.id_empresa,
       e.id_usuario as id_usuario_empresa,
       emp.nombre_empresa
@@ -104,7 +104,7 @@ const getSolicitudContactoData = async (id_solicitud) => {
       f.id_usuario as id_usuario_freelancer,
       CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_freelancer,
       p.id_proyecto,
-      p.nombre_proyecto,
+      p.titulo as nombre_proyecto,
       emp.nombre_empresa
      FROM solicitudes_contacto sc
      INNER JOIN postulacion po ON sc.id_postulacion = po.id_postulacion
@@ -132,7 +132,7 @@ const getReceptorDataForContactRequest = async (id_postulacion, connection = poo
       f.id_usuario as id_usuario_receptor,
       CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_freelancer,
       emp.nombre_empresa,
-      p.nombre_proyecto,
+      p.titulo as nombre_proyecto,
       pp.id_publicacion
      FROM postulacion po
      INNER JOIN freelancer f ON po.id_freelancer = f.id_freelancer

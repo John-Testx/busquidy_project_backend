@@ -269,7 +269,7 @@ const obtenerSolicitudes = async (req, res) => {
       `SELECT sc.*, 
               CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_freelancer,
               emp.nombre_empresa,
-              p.nombre_proyecto
+              p.titulo as nombre_proyecto
        FROM solicitudes_contacto sc
        INNER JOIN postulacion po ON sc.id_postulacion = po.id_postulacion
        INNER JOIN freelancer f ON po.id_freelancer = f.id_freelancer
