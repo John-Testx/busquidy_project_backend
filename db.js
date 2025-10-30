@@ -1,70 +1,119 @@
 require("dotenv").config();
 const mysql = require("mysql2/promise");
-const fs = require('fs');
-const path = require('path'); // Import 'path' for a more robust file path
-// THIS IS THE CORRECT IMPORT
 const { Connector } = require("@google-cloud/cloud-sql-connector");
 
-const pool = (() => {
-  const dbEnv = process.env.DB_ENV || 'local';
-  console.log(`Inicializando conexión a DB para ambiente: ${dbEnv}`);
+/**
+ * Esta función se encarga SÓLO de la conexión CLOUD
+ */
+const connectWithConnector = async () => {
+  console.log("-> Conectando vía Cloud SQL Connector (IAM)...");
+  const connector = new Connector();
+  const clientOpts = await connector.getOptions({
+    instanceConnectionName: process.env.DB_INSTANCE_CONNECTION_NAME,
+    ipType: 'PUBLIC',
+    // authType: "IAM",
+  });
 
-  let config;
+  const user = process.env.DB_USER_CLOUD;
+  const password = process.env.DB_PASSWORD_CLOUD;
+  const database = process.env.DB_NAME;
 
-  if (dbEnv === 'cloud') {
-    // --- CONFIG CLOUD (IP Pública + SSL) ---
-    // Este es el método que usa Workbench.
-    
-    // Asume que 'server-ca.pem' está en el MISMO directorio que este db.js
-    const certPath = path.join(__dirname, 'server-ca.pem');
-    if (!fs.existsSync(certPath)) {
-      console.error("ERROR FATAL: Certificado SSL 'server-ca.pem' no encontrado.");
-      console.error(`Se esperaba en: ${certPath}`);
-      // Asegúrate de que el archivo server-ca.pem esté al lado de db.js
-      throw new Error("Falta server-ca.pem para conexión cloud");
-    }
-    console.log(`Cargando certificado SSL desde: ${certPath}`);
+  console.log("DB INFO: ", {
+    user: user,
+    database: database,
+    password: password
+  });
 
-    config = {
-      host: process.env.DB_HOST_CLOUD,
-      user: process.env.DB_USER_CLOUD,
-      password: process.env.DB_PASSWORD_CLOUD, // La contraseña STRING
-      database: process.env.DB_NAME,
-      port: 3306,
-      ssl: {
-        ca: fs.readFileSync(certPath)
+  const dbConfig = {
+    ...clientOpts,
+    user: user,
+    password: password,
+    database: process.env.DB_NAME,
+  };
+
+  // Crear y devolver el pool de CLOUD
+  return mysql.createPool({
+    ...dbConfig,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+  });
+};
+
+/**
+ * Esta función se encarga SÓLO de la conexión LOCAL
+ */
+const connectLocal = () => {
+  console.log("-> Conectando a DB Local...");
+  const dbConfig = {
+    host: process.env.DB_HOST_LOCAL,
+    user: process.env.DB_USER_LOCAL,
+    password: process.env.DB_PASSWORD_LOCAL,
+    database: process.env.DB_NAME,
+    port: 3306
+  };
+  
+  // Crear y devolver el pool LOCAL
+  return mysql.createPool({
+    ...dbConfig,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+  });
+};
+
+
+// 1. Objeto 'db' que se exporta
+const db = {
+  pool: null, // El pool real vivirá aquí
+
+  /**
+   * 2. Función de INICIALIZACIÓN
+   */
+  initialize: async () => {
+    if (db.pool) return; // No inicializar dos veces
+
+    const dbEnv = process.env.DB_ENV || 'local';
+    console.log(`Inicializando conexión a DB para ambiente: ${dbEnv}`);
+
+    try {
+      if (dbEnv === 'cloud') {
+        // --- CLOUD ---
+        // Espera a que la conexión cloud se complete y asigna el pool
+        db.pool = await connectWithConnector();
+      
+      } else {
+        // --- LOCAL ---
+        // Crea la conexión local (es síncrona) y asigna el pool
+        db.pool = connectLocal(); 
       }
-    };
-    
-  } else {
-    // --- CONFIG LOCAL ---
-    console.log("Usando conexión a DB Local...");
-    config = {
-      host: process.env.DB_HOST_LOCAL,
-      user: process.env.DB_USER_LOCAL,
-      password: process.env.DB_PASSWORD_LOCAL,
-      database: process.env.DB_NAME,
-      port: 3306
-    };
-  }
+      
+      // Este log ahora es correcto y se refiere al pool que acabamos de crear
+      console.log("✅ Pool de conexión a DB creado exitosamente.");
 
-  // --- CREAR EL POOL ---
-  try {
-    const dbPool = mysql.createPool({
-      ...config, // Aplica la config elegida
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-    });
-    
-    console.log("✅ Pool de conexión a DB creado exitosamente.");
-    return dbPool; // Retorna el OBJETO pool real
-    
-  } catch (error) {
-    console.error("❌ Falló al crear el pool de conexión:", error);
-    throw error;
-  }
-})(); // Los () aquí ejecutan la función inmediatamente
+    } catch (error) {
+      console.error("❌ Falló al crear el pool de conexión:", error);
+      throw error; // Lanza el error para que 'startServer' falle
+    }
+  },
 
-// Esto exporta el objeto pool, no una promesa.
-module.exports = pool;
+  /**
+   * 3. Funciones "Proxy" (sin cambios)
+   */
+  query: (...args) => {
+    if (!db.pool) {
+      throw new Error("Pool no inicializado. Asegúrate de llamar a 'await db.initialize()' en tu server.js");
+    }
+    return db.pool.query(...args);
+  },
+  
+  getConnection: (...args) => {
+    if (!db.pool) {
+      throw new Error("Pool no inicializado. Asegúrate de llamar a 'await db.initialize()' en tu server.js");
+    }
+    return db.pool.getConnection(...args);
+  }
+};
+
+// 4. Exportar el objeto 'db'
+module.exports = db;
