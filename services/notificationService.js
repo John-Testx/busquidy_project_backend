@@ -19,7 +19,7 @@ const pool = require("../db");
 const crearNotificacion = async (data, connection = null) => {
   try {
     const db = connection || pool;
-    const id_notificacion = await insertNotification(data, connection);
+    const id_notificacion = await insertNotification(data, db);
     console.log(`✅ Notificación creada: ${data.tipo_notificacion} para usuario ${data.id_usuario_receptor}`);
     return id_notificacion;
   } catch (error) {
