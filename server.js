@@ -160,9 +160,7 @@ let connectedUsers = 0;
 // ✅ MAPA PARA TRACKEAR USUARIOS CONECTADOS (para notificaciones en tiempo real)
 const userSocketMap = new Map(); // Map<userId, socketId>
 
-
 // ==================================
-
 
 io.on("connection", (socket) => {
   connectedUsers++;
