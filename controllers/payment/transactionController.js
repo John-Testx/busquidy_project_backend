@@ -14,17 +14,52 @@ const {
 const createSubscriptionTransaction = async (req, res) => {
   let connection;
   try {
-    const { amount, buyOrder, sessionId, plan, tipoUsuario, metodoPago, returnUrl: requestReturnUrl } = req.body;
+    const { amount, buyOrder, sessionId, plan, tipoUsuario, metodoPago, returnUrl: requestReturnUrl, isFreePlan } = req.body;
 
     console.log("Received request body:", req.body);
 
-    if (!amount || !buyOrder || !sessionId || !plan || !tipoUsuario || !metodoPago) {
+    // Verificamos que los campos no sean 'null' o 'undefined', pero SÍ permitimos amount = 0
+    if (
+      (amount === null || amount === undefined) ||
+      !buyOrder || 
+      !sessionId || 
+      !plan || 
+      !tipoUsuario || 
+      !metodoPago
+    ) {
       return res.status(400).json({ error: "Datos incompletos o inválidos" });
     }
 
     const returnUrl = requestReturnUrl || `${process.env.FRONTEND_URL || "http://localhost:3000"}/freelancer`;
 
     connection = await pool.getConnection();
+
+    if (isFreePlan && amount <= 0) {
+        console.log("Activando plan gratuito...");
+        
+        // Obtenemos el id_usuario del sessionId
+        const idUsuario = String(sessionId).includes("-") ? sessionId.split("-")[1] : sessionId;
+        
+        // Usamos el servicio de suscripción directamente
+        const subResult = await processSubscriptionPayment(connection, {
+            idUsuario: idUsuario,
+            monto: 0,
+            metodoPago: 'gratuito',
+            token: buyOrder, // Usamos el buyOrder como referencia/token
+            status: 'APPROVED',
+            planRaw: plan, // El ID del plan
+        });
+
+        await connection.commit();
+        
+        // Devolvemos una respuesta exitosa, saltándonos Webpay
+        return res.json({
+            status: "APPROVED",
+            message: "Plan gratuito activado exitosamente",
+            type: "SUBSCRIPTION",
+            ...subResult
+        });
+    }
 
     // Fetch plan from DB
     const planRow = await getPlanById(plan);

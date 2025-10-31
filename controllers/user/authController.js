@@ -30,12 +30,17 @@ const register = async (req, res) => {
     console.log("ID Usuario insertado:", id_usuario);
 
     // Crear perfil dependiendo del tipo de usuario
-    if (tipo_usuario === "empresa") {
+    // Comprobamos si el tipo_usuario es CUALQUIERA de los tipos de empresa
+    if (tipo_usuario === "empresa_juridico" || tipo_usuario === "empresa_natural") {
       await profileQueries.insertEmpresaProfile(id_usuario);
       res.status(201).json({ message: "Usuario empresa registrado exitosamente" });
+    
+    // Mantenemos la lógica para freelancer
     } else if (tipo_usuario === "freelancer") {
       await profileQueries.insertFreelancerProfile(id_usuario);
       res.status(201).json({ message: "Usuario freelancer registrado exitosamente" });
+    
+    // El 'else' ahora capturará 'administrador' o tipos realmente inválidos
     } else {
       res.status(400).json({ error: "Tipo de usuario no válido" });
     }

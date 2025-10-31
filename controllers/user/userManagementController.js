@@ -64,20 +64,24 @@ const getUsersWithData = async (req, res) => {
 
     const usuariosConDatos = await Promise.all(
       usuarios.map(async (usuario) => {
-        const empresa = usuario.tipo_usuario === "empresa"
+        // Comprobamos si el tipo de usuario es CUALQUIERA de los tipos de empresa
+        const isEmpresa = usuario.tipo_usuario === "empresa_juridico" || usuario.tipo_usuario === "empresa_natural";
+        const isFreelancer = usuario.tipo_usuario === "freelancer";
+
+        const empresa = isEmpresa
           ? await profileQueries.findEmpresaByUserId(usuario.id_usuario)
           : null;
 
-        const freelancer = usuario.tipo_usuario === "freelancer"
+        const freelancer = isFreelancer
           ? await profileQueries.findFreelancerByUserId(usuario.id_usuario)
           : null;
 
         // Procesar datos de rol y premium
-        const idRol = usuario.tipo_usuario === "empresa"
+        const idRol = isEmpresa
           ? (empresa ? empresa.id_empresa : null)
           : (freelancer ? freelancer.id_freelancer : null);
 
-        const premium = usuario.tipo_usuario === "empresa"
+        const premium = isEmpresa
           ? (empresa && empresa.premium === 1 ? "Sí" : "No")
           : (freelancer && freelancer.premium === 1 ? "Sí" : "No");
 
