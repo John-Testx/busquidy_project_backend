@@ -15,10 +15,6 @@ const crearTicketPublico = async (req, res) => {
       return res.status(400).json({ error: "El asunto es requerido" });
     }
 
-    if (!nombre_contacto || nombre_contacto.trim() === "") {
-      return res.status(400).json({ error: "El nombre es requerido" });
-    }
-
     if (!email_contacto || !email_contacto.includes("@")) {
       return res.status(400).json({ error: "El email es requerido y debe ser válido" });
     }
@@ -32,7 +28,7 @@ const crearTicketPublico = async (req, res) => {
       asunto,
       categoria || 'Otro',
       prioridad || 'media',
-      nombre_contacto,
+      email_contacto,
       email_contacto
     );
 
