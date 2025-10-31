@@ -1,16 +1,21 @@
-// backend/controllers/videoController.js
-
 const db = require('../db');
 const { v4: uuidV4 } = require('uuid');
 
 exports.scheduleCall = async (req, res) => {
     // El ID del usuario que agenda (de la empresa) se obtiene del token
     const id_usuario_empresa = req.user.id; 
+    const { tipo_usuario } = req.user; // ✅ Obtenemos el tipo de usuario
     const { title, scheduled_at, id_postulacion } = req.body;
 
     if (!title || !scheduled_at || !id_postulacion) {
         return res.status(400).json({ message: 'El título, la fecha y el ID de la postulación son requeridos.' });
     }
+
+    // ✅ ===== NUEVA VALIDACIÓN =====
+    if (tipo_usuario !== 'empresa_juridico' && tipo_usuario !== 'empresa_natural') {
+        return res.status(403).json({ message: 'Acción no autorizada. Solo las empresas pueden agendar entrevistas.' });
+    }
+    // ✅ ===== FIN DE VALIDACIÓN =====
 
     const roomId = `busquidy-call-${uuidV4()}`;
 
@@ -26,6 +31,7 @@ exports.scheduleCall = async (req, res) => {
         const { id_freelancer, id_empresa } = postRows[0];
 
         // 2. Insertar en la nueva tabla 'entrevista'
+        // (Asegúrate de que la tabla 'entrevista' exista en tu BD)
         const insertQuery = `
             INSERT INTO entrevista (id_postulacion, id_empresa, id_freelancer, titulo, room_id, fecha_agendada)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -50,7 +56,10 @@ exports.getScheduledCalls = async (req, res) => {
     try {
         let query;
         // Filtrar por tipo de usuario para devolver las entrevistas correspondientes
-        if (tipo_usuario === 'empresa') {
+        
+        // ✅ ===== CAMBIO AQUÍ =====
+        if (tipo_usuario === 'empresa_juridico' || tipo_usuario === 'empresa_natural') {
+        // ✅ ===== FIN DEL CAMBIO =====
             query = `SELECT e.*, f.nombres, f.apellidos FROM entrevista e JOIN antecedentes_personales f ON e.id_freelancer = f.id_freelancer WHERE e.id_empresa = (SELECT id_empresa FROM empresa WHERE id_usuario = $1) AND e.fecha_agendada >= NOW() ORDER BY e.fecha_agendada ASC;`;
         } else if (tipo_usuario === 'freelancer') {
             query = `SELECT e.*, emp.nombre_empresa FROM entrevista e JOIN empresa emp ON e.id_empresa = emp.id_empresa WHERE e.id_freelancer = (SELECT id_freelancer FROM freelancer WHERE id_usuario = $1) AND e.fecha_agendada >= NOW() ORDER BY e.fecha_agendada ASC;`;

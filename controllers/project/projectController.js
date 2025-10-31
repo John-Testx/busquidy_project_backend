@@ -4,8 +4,17 @@ const { getEmpresaByUserId } = require("../../queries/empresa/empresaQueries.js"
 
 const {getUserById} = require("../../queries/user/userQueries");
 const pool = require("../../db");
-const { notificarPostulacionRecibida, notificarNuevaPostulacion } = require("../../services/notificationService");
+
+// ✅ --- IMPORTS ACTUALIZADOS ---
+const { 
+    notificarPostulacionRecibida, 
+    notificarNuevaPostulacion,
+    notificarPostulacionAceptada,
+    notificarPostulacionRechazada
+} = require("../../services/notificationService");
 const { getPostulacionData } = require("../../queries/notification/notificationHelperQueries");
+// ✅ --- NUEVO IMPORT DEL GUARDIÁN ---
+const { checkUsageLimit } = require("../../services/subscriptionService");
 
 
 /**
@@ -97,10 +106,41 @@ const createProject = async (req, res) => {
     }
 
     const tipo_usuario = userCheckResults[0].tipo_usuario;
-    if (tipo_usuario !== "empresa") {
+    
+    // (Lógica de Tipo de Usuario - OK)
+    if (tipo_usuario !== "empresa_juridico" && tipo_usuario !== "empresa_natural") {
       await connection.rollback();
       return res.status(403).json({ error: "Acceso no autorizado" });
     }
+
+    // (Lógica de Proyecto vs Tarea - OK)
+    const { tipo } = projectData; // 'proyecto' o 'tarea'
+    
+    if (!tipo) {
+      await connection.rollback();
+      return res.status(400).json({ error: "El campo 'tipo' (proyecto o tarea) es requerido." });
+    }
+
+    if (tipo_usuario === 'empresa_juridico' && tipo !== 'proyecto') {
+        await connection.rollback();
+        return res.status(403).json({ error: 'Las empresas jurídicas solo pueden publicar proyectos.' });
+    }
+
+    if (tipo_usuario === 'empresa_natural' && tipo !== 'tarea') {
+        await connection.rollback();
+        return res.status(403).json({ error: 'Las empresas naturales solo pueden publicar tareas.' });
+    }
+    
+    // ✅ ===== GUARDIÁN DE LÍMITES (PUBLICACIÓN) =====
+    const tipo_accion_publicar = (tipo === 'proyecto') ? 'publicacion_proyecto' : 'publicacion_tarea';
+    const puedePublicar = await checkUsageLimit(id_usuario, tipo_accion_publicar, connection);
+
+    if (!puedePublicar) {
+        await connection.rollback();
+        return res.status(403).json({ message: 'Has alcanzado el límite de publicaciones para tu plan.' });
+    }
+    // ✅ ===== FIN DEL GUARDIÁN =====
+
 
     // Obtener `id_empresa`
     const empresaResults = await getEmpresaByUserId(id_usuario);
@@ -134,7 +174,8 @@ const createProject = async (req, res) => {
   } catch (err) {
     console.error("Error al crear el proyecto:", err);
     if (connection) await connection.rollback();
-    res.status(500).json({ error: "Error interno del servidor" });
+    // Devuelve el mensaje de error del guardián si existe
+    res.status(err.message.includes("límite") ? 403 : 500).json({ error: err.message || "Error interno del servidor" });
   } finally {
     if (connection) await connection.release();
   }
@@ -210,10 +251,12 @@ const getProjectsByUser = async (req, res) => {
     }
 
     const tipo_usuario = userCheckResults[0].tipo_usuario;
-    if (tipo_usuario !== "empresa") {
+    
+    // (Lógica de Tipo de Usuario - OK)
+    if (tipo_usuario !== "empresa_juridico" && tipo_usuario !== "empresa_natural") {
       return res.status(403).json({ error: "Acceso no autorizado" });
     }
-
+    
     // Obtener `id_empresa`
     const empresaResults = await getEmpresaByUserId(id_usuario);
     if (empresaResults.length === 0) {
@@ -350,13 +393,6 @@ const releaseProjectPayment = async (req, res) => {
 
     console.log('✅ Estado del proyecto actualizado a finalizado');
 
-    // 7. (Opcional) Habilitar reseñas
-    // Si tienes una columna para esto en tu base de datos, descomenta:
-    // await connection.query(
-    //   `UPDATE proyecto SET resena_habilitada = 1 WHERE id_proyecto = ?`,
-    //   [id_proyecto]
-    // );
-
     await connection.commit();
     console.log('✅ Transacción completada exitosamente');
 
@@ -389,7 +425,7 @@ const releaseProjectPayment = async (req, res) => {
 // ✅ NUEVA FUNCIÓN: Crear postulación
 const crearPostulacion = async (req, res) => {
   const { id_publicacion } = req.body;
-  const { id_usuario } = req.user; // Usuario freelancer autenticado
+  const { id: id_usuario } = req.user; // Usuario freelancer autenticado (ID viene de req.user.id)
   
   let connection;
   try {
@@ -403,10 +439,36 @@ const crearPostulacion = async (req, res) => {
     );
 
     if (!freelancer || freelancer.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ error: "Freelancer no encontrado" });
     }
 
     const id_freelancer = freelancer[0].id_freelancer;
+
+    
+    // ✅ ===== GUARDIÁN DE LÍMITES (POSTULACIÓN) =====
+    // 1. Averiguar el tipo de publicación
+    const [pubTipo] = await connection.query(
+        "SELECT p.tipo FROM proyecto p JOIN publicacion_proyecto pp ON p.id_proyecto = pp.id_proyecto WHERE pp.id_publicacion = ?",
+        [id_publicacion]
+    );
+
+    if (!pubTipo || pubTipo.length === 0) {
+         await connection.rollback();
+         return res.status(404).json({ error: "Publicación no encontrada" });
+    }
+
+    // 2. Comprobar el límite
+    const tipo_accion_postular = (pubTipo[0].tipo === 'proyecto') ? 'postulacion_proyecto' : 'postulacion_tarea';
+    // (Usamos id_usuario, no id_freelancer, para el check)
+    const puedePostular = await checkUsageLimit(id_usuario, tipo_accion_postular, connection); 
+
+    if (!puedePostular) {
+        await connection.rollback();
+        return res.status(403).json({ message: 'Has alcanzado el límite de postulaciones para tu plan.' });
+    }
+    // ✅ ===== FIN DEL GUARDIÁN =====
+
 
     // Verificar que no haya postulado antes
     const [existente] = await connection.query(
@@ -415,6 +477,7 @@ const crearPostulacion = async (req, res) => {
     );
 
     if (existente && existente.length > 0) {
+      await connection.rollback();
       return res.status(409).json({ error: "Ya has postulado a este proyecto" });
     }
 
@@ -427,9 +490,9 @@ const crearPostulacion = async (req, res) => {
 
     const id_postulacion = result.insertId;
 
-    // ✅ OBTENER DATOS PARA NOTIFICACIONES
+    // (Lógica de Notificaciones - OK)
     const [proyecto] = await connection.query(
-      `SELECT p.nombre_proyecto, p.id_empresa, e.id_usuario as id_usuario_empresa
+      `SELECT p.titulo as nombre_proyecto, p.id_empresa, e.id_usuario as id_usuario_empresa
        FROM publicacion_proyecto pp
        INNER JOIN proyecto p ON pp.id_proyecto = p.id_proyecto
        INNER JOIN empresa e ON p.id_empresa = e.id_empresa
@@ -441,7 +504,6 @@ const crearPostulacion = async (req, res) => {
       const nombreProyecto = proyecto[0].nombre_proyecto;
       const idUsuarioEmpresa = proyecto[0].id_usuario_empresa;
 
-      // Obtener nombre del freelancer
       const [freelancerData] = await connection.query(
         `SELECT CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_completo
          FROM antecedentes_personales ap
@@ -451,7 +513,6 @@ const crearPostulacion = async (req, res) => {
 
       const nombreFreelancer = freelancerData[0]?.nombre_completo || "Freelancer";
 
-      // ✅ NOTIFICAR AL FREELANCER
       await notificarPostulacionRecibida(
         id_usuario,
         nombreProyecto,
@@ -459,7 +520,6 @@ const crearPostulacion = async (req, res) => {
         connection
       );
 
-      // ✅ NOTIFICAR A LA EMPRESA
       await notificarNuevaPostulacion(
         idUsuarioEmpresa,
         nombreFreelancer,
@@ -478,7 +538,8 @@ const crearPostulacion = async (req, res) => {
   } catch (error) {
     if (connection) await connection.rollback();
     console.error("Error al crear postulación:", error);
-    res.status(500).json({ error: "Error al crear la postulación" });
+    // Devuelve el mensaje de error del guardián si existe
+    res.status(error.message.includes("límite") ? 403 : 500).json({ error: error.message || "Error al crear la postulación" });
   } finally {
     if (connection) connection.release();
   }
@@ -499,11 +560,11 @@ const aceptarPostulacion = async (req, res) => {
       [id_postulacion]
     );
 
-    // ✅ OBTENER DATOS PARA NOTIFICACIÓN
+    // OBTENER DATOS PARA NOTIFICACIÓN
     const postulacionData = await getPostulacionData(id_postulacion);
 
     if (postulacionData) {
-      // ✅ NOTIFICAR AL FREELANCER
+      // (Import corregido al inicio del archivo)
       await notificarPostulacionAceptada(
         postulacionData.id_usuario_freelancer,
         postulacionData.nombre_proyecto,
@@ -539,12 +600,11 @@ const rechazarPostulacion = async (req, res) => {
       [id_postulacion]
     );
 
-    // ✅ OBTENER DATOS PARA NOTIFICACIÓN
+    // OBTENER DATOS PARA NOTIFICACIÓN
     const postulacionData = await getPostulacionData(id_postulacion);
 
     if (postulacionData) {
-      // ✅ NOTIFICAR AL FREELANCER
-      const { notificarPostulacionRechazada } = require("../../services/notificationService");
+      // (Import corregido al inicio del archivo)
       await notificarPostulacionRechazada(
         postulacionData.id_usuario_freelancer,
         postulacionData.nombre_proyecto,
@@ -634,7 +694,9 @@ module.exports = {
   deleteProject,
   getProjectsByUser,
   releaseProjectPayment,
-  crearPostulacion,      
-  aceptarPostulacion,      
-  rechazarPostulacion,   
+  crearPostulacion,       
+  aceptarPostulacion,       
+  rechazarPostulacion,  
+  getPostulationsByProjectId,
+  getPostulationsByPublicationId
 };

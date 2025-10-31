@@ -64,9 +64,15 @@ const getEmpresaProfileStatus = async (req, res) => {
     }
 
     const { tipo_usuario } = userCheckResults[0];
-    if (tipo_usuario !== "empresa") {
+
+    // ✅ ===== CAMBIO AQUÍ =====
+    // Ahora verifica si el usuario es CUALQUIER tipo de empresa
+    if (tipo_usuario !== "empresa_juridico" && tipo_usuario !== "empresa_natural") {
+    // O una forma más limpia:
+    // if (!['empresa_juridico', 'empresa_natural'].includes(tipo_usuario)) {
       return res.status(403).json({ error: "Acceso no autorizado" });
     }
+    // ✅ ===== FIN DEL CAMBIO =====
 
     // Obtener datos de empresa
     const empresaResults = await empresaQueries.findEmpresaByUserId(id_usuario);
