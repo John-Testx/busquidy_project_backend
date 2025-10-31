@@ -70,7 +70,27 @@ const optionalAuth = (req, res, next) => {
   }
 };
 
+const isEmpresa = (req, res, next) => {
+  // Este middleware debe correr DESPUÉS de verifyToken,
+  // por lo que ya deberíamos tener req.user
+  if (!req.isAuthenticated || !req.user) {
+    return res.status(401).json({ error: "Acceso denegado, requiere token" });
+  }
+
+  const userRole = req.user.tipo_usuario; // O como se llame el campo de rol en tu JWT
+
+  if (userRole === "empresa_juridico" || userRole === "empresa_natural") {
+    // Si el rol es uno de los permitidos, continúa
+    next();
+  } else {
+    // Si no tiene el rol adecuado, deniega el acceso
+    console.warn(`Intento de acceso denegado para usuario ${req.user.id} con rol ${userRole} a ruta de empresa`);
+    return res.status(403).json({ error: "Acceso denegado. No tienes permisos de empresa." });
+  }
+};
+
 module.exports = {
   verifyToken,
-  optionalAuth
+  optionalAuth,
+  isEmpresa
 };
