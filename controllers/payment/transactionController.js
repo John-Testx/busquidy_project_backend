@@ -266,12 +266,12 @@ const commitTransaction = async (req, res) => {
         
         // Obtener datos del proyecto
         const [proyectoData] = await connection.query(
-          "SELECT p.nombre_proyecto, p.id_empresa FROM proyecto p WHERE p.id_proyecto = ?",
+          "SELECT p.titulo, p.id_empresa FROM proyecto p WHERE p.id_proyecto = ?",
           [idProyecto]
         );
         
         if (proyectoData && proyectoData.length > 0) {
-          const nombreProyecto = proyectoData[0].nombre_proyecto;
+          const nombreProyecto = proyectoData[0].titulo;
           
           // Obtener id_usuario de la empresa
           const [empresaData] = await connection.query(

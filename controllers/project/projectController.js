@@ -107,32 +107,23 @@ const createProject = async (req, res) => {
 
     const tipo_usuario = userCheckResults[0].tipo_usuario;
     
-    // (Lógica de Tipo de Usuario - OK)
-    if (tipo_usuario !== "empresa_juridico" && tipo_usuario !== "empresa_natural") {
-      await connection.rollback();
-      return res.status(403).json({ error: "Acceso no autorizado" });
-    }
-
-    // (Lógica de Proyecto vs Tarea - OK)
-    const { tipo } = projectData; // 'proyecto' o 'tarea'
-    
-    if (!tipo) {
-      await connection.rollback();
-      return res.status(400).json({ error: "El campo 'tipo' (proyecto o tarea) es requerido." });
-    }
-
-    if (tipo_usuario === 'empresa_juridico' && tipo !== 'proyecto') {
+    let tipo_publicacion;
+    if (tipo_usuario === "empresa_juridico") {
+        tipo_publicacion = "proyecto";
+    } else if (tipo_usuario === "empresa_natural") {
+        tipo_publicacion = "tarea";
+    } else {
         await connection.rollback();
-        return res.status(403).json({ error: 'Las empresas jurídicas solo pueden publicar proyectos.' });
+        return res.status(403).json({ error: "Acceso no autorizado: Tipo de usuario no puede publicar." });
     }
 
-    if (tipo_usuario === 'empresa_natural' && tipo !== 'tarea') {
-        await connection.rollback();
-        return res.status(403).json({ error: 'Las empresas naturales solo pueden publicar tareas.' });
-    }
+    // Asignamos el tipo correcto a los datos del proyecto
+    projectData.tipo = tipo_publicacion;
+
     
     // ✅ ===== GUARDIÁN DE LÍMITES (PUBLICACIÓN) =====
-    const tipo_accion_publicar = (tipo === 'proyecto') ? 'publicacion_proyecto' : 'publicacion_tarea';
+    // Usamos la variable 'tipo_publicacion' que acabamos de definir
+    const tipo_accion_publicar = (tipo_publicacion === 'proyecto') ? 'publicacion_proyecto' : 'publicacion_tarea';
     const puedePublicar = await checkUsageLimit(id_usuario, tipo_accion_publicar, connection);
 
     if (!puedePublicar) {
@@ -140,7 +131,6 @@ const createProject = async (req, res) => {
         return res.status(403).json({ message: 'Has alcanzado el límite de publicaciones para tu plan.' });
     }
     // ✅ ===== FIN DEL GUARDIÁN =====
-
 
     // Obtener `id_empresa`
     const empresaResults = await getEmpresaByUserId(id_usuario);
@@ -167,9 +157,12 @@ const createProject = async (req, res) => {
 
     await connection.commit();
     console.log("Proyecto y publicación creados con éxito");
+    const newProjectData = await projectQueries.findProjectById(id_proyecto);
+    
     res.status(200).json({
       message: "Proyecto y publicación creados con éxito",
-      projectId: id_proyecto,
+      // projectId: id_proyecto, // Puedes mantenerlo si quieres
+      newProject: newProjectData // Devolvemos el proyecto/tarea creado
     });
   } catch (err) {
     console.error("Error al crear el proyecto:", err);

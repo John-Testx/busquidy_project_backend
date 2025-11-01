@@ -46,6 +46,7 @@ const findProjectsWithPublicationsDetailed = async () => {
       p.id_proyecto, 
       p.id_empresa, 
       p.titulo, 
+      p.tipo,
       p.descripcion, 
       p.categoria, 
       p.habilidades_requeridas, 

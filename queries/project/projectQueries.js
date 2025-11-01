@@ -11,6 +11,7 @@ const findAllProjectsWithPublications = async () => {
       p.id_proyecto,
       p.id_empresa,
       p.titulo,
+      p.tipo,
       p.categoria,
       p.descripcion,
       pp.fecha_creacion,
@@ -30,6 +31,7 @@ const findProjectById = async (id_proyecto) => {
       p.id_proyecto,
       p.id_empresa,
       p.titulo,
+      p.tipo,
       p.categoria,
       p.descripcion,
       p.habilidades_requeridas,
@@ -64,12 +66,13 @@ const findProjectsByEmpresaId = async (id_empresa) => {
 const insertProject = async (projectData, id_empresa, connection = pool) => {
   const [result] = await connection.query(
     `INSERT INTO proyecto 
-      (id_empresa, titulo, descripcion, categoria, habilidades_requeridas, presupuesto, 
+      (id_empresa, titulo, tipo, descripcion, categoria, habilidades_requeridas, presupuesto, 
        duracion_estimada, fecha_limite, ubicacion, tipo_contratacion, metodologia_trabajo)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id_empresa,
       projectData.titulo,
+      projectData.tipo,
       projectData.descripcion,
       projectData.categoria,
       projectData.habilidades_requeridas,
