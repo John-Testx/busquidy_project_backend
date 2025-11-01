@@ -1,11 +1,9 @@
 const projectQueries = require("../../queries/project/projectQueries");
 const publicationQueries = require("../../queries/project/publicationQueries");
 const { getEmpresaByUserId } = require("../../queries/empresa/empresaQueries.js");
-
 const {getUserById} = require("../../queries/user/userQueries");
 const pool = require("../../db");
 
-// ✅ --- IMPORTS ACTUALIZADOS ---
 const { 
     notificarPostulacionRecibida, 
     notificarNuevaPostulacion,

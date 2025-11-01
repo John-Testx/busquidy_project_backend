@@ -67,8 +67,8 @@ const getUserIdByEmpresaId = async (id_empresa) => {
 /**
  * Obtener datos completos de una postulación
  */
-const getPostulacionData = async (id_postulacion) => {
-  const [rows] = await pool.query(
+const getPostulacionData = async (id_postulacion, connection = pool) => {
+  const [rows] = await connection.query(
     `SELECT 
       po.id_postulacion,
       po.id_freelancer,

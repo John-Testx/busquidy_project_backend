@@ -111,7 +111,7 @@ const notificarNuevoMensaje = async (id_receptor, nombre_remitente, id_conversac
     id_usuario_receptor: id_receptor,
     tipo_notificacion: "nuevo_mensaje",
     mensaje: `Tienes un nuevo mensaje de '${nombre_remitente}'.`,
-    enlace: `/chat/${id_conversacion}`
+    enlace: `/chat/`
   }, connection);
 };
 
@@ -132,12 +132,15 @@ const notificarNuevaResenaRecibida = async (id_receptor, nombre_quien_resena, ca
 /**
  * Notificar a la empresa que recibió una nueva postulación
  */
-const notificarNuevaPostulacion = async (id_empresa_usuario, nombre_freelancer, nombre_proyecto, id_postulacion, connection = null) => {
+const notificarNuevaPostulacion = async (id_empresa_usuario, nombre_freelancer, nombre_proyecto, id_postulacion, id_proyecto, connection = null) => {
   return await crearNotificacion({
     id_usuario_receptor: id_empresa_usuario,
     tipo_notificacion: "nueva_postulacion",
     mensaje: `'${nombre_freelancer}' ha postulado a tu proyecto '${nombre_proyecto}'.`,
-    enlace: `/proyectos/postulaciones/${id_postulacion}`
+    
+    // Corregimos la URL para que coincida con AppRoutes.jsx
+    enlace: `/empresa/proyectos/${id_proyecto}` 
+    // enlace: `/proyectos/postulaciones/${id_postulacion}` // <- ESTA ERA LA RUTA INCORRECTA
   }, connection);
 };
 

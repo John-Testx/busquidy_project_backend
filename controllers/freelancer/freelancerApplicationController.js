@@ -1,5 +1,7 @@
 const pool = require("../../db");
 const applicationQueries = require("../../queries/freelancer/applicationQueries");
+const { notificarNuevaPostulacion } = require("../../services/notificationService");
+const { getPostulacionData } = require("../../queries/notification/notificationHelperQueries");
 
 /**
  * Crear postulación a un proyecto
@@ -43,18 +45,50 @@ const createApplication = async (req, res) => {
       return res.status(404).json({ error: "No se encontró el freelancer" });
     }
 
-    // Crear postulación
-    await applicationQueries.createApplication(
+    const newPostulationId = await applicationQueries.createApplication(
       id_publicacion, 
       id_freelancer, 
       connection
     );
 
+    // Verificamos que obtuvimos un ID
+    if (!newPostulationId) {
+        await connection.rollback();
+        console.error("Error: applicationQueries.createApplication no devolvió un ID.");
+        return res.status(500).json({ error: "Error al crear la postulación" });
+    }
+    // Si la notificación falla, NO queremos revertir la postulación
+    try {
+      // Obtenemos los datos necesarios para el mensaje (nombre_proyecto, id_usuario_empresa, etc.)
+      const postData = await getPostulacionData(newPostulationId, connection);
+
+      if (postData) {
+        // Enviamos la notificación a la empresa
+        await notificarNuevaPostulacion(
+          postData.id_usuario_empresa,  // ID del receptor (empresa)
+          postData.nombre_freelancer,   // Nombre del postulante
+          postData.nombre_proyecto,     // Nombre del proyecto
+          newPostulationId,             // ID de la postulación
+          postData.id_proyecto,         // ID del proyecto (para la URL correcta)
+          connection                    // Pasamos la conexión para que sea transaccional
+        );
+      } else {
+        // Advertencia si no encontramos datos, pero no detenemos el proceso
+        console.warn(`No se encontraron datos (postData) para la notificación de la postulación ${newPostulationId}.`);
+      }
+    } catch (notificationError) {
+      // Si falla la notificación, solo lo registramos en consola y continuamos
+      console.error("Error al enviar la notificación de nueva postulación (la postulación SÍ se creó):", notificationError);
+    }
+
     await connection.commit();
+
     res.status(201).json({
       message: "Postulación exitosa",
-      id_publicacion: id_publicacion
+      id_publicacion: id_publicacion,
+      id_postulacion: newPostulationId // Devolvemos el ID de la nueva postulación
     });
+
   } catch (error) {
     console.error("Error al intentar postular:", error);
     if (connection) await connection.rollback();
