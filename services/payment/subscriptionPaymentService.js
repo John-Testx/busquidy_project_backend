@@ -1,5 +1,5 @@
 const { insertPago, insertPagoDetalleSuscripcion } = require("../../queries/payment/transactionQueries");
-const { hasActiveSuscripcion, insertSuscripcion } = require("../../queries/payment/subscriptionQueries");
+const { hasActiveSuscripcion, insertSuscripcion, cancelSubscriptionById } = require("../../queries/payment/subscriptionQueries");
 const { getPlanById } = require("../../queries/payment/planQueries");
 const {getUserById} = require("../../queries/user/userQueries");
 
