@@ -191,5 +191,6 @@ const getUsageDetails = async (id_usuario) => {
 
 module.exports = {
     checkUsageLimit,
-    getUsageDetails
+    getUsageDetails,
+    getActivePlan
 };

@@ -1,14 +1,10 @@
-// controllers/payment/subscriptionController.js
 const pool = require("../../db");
-// IMPORTAMOS EL SERVICIO CORRECTO
 const { getActivePlan } = require("../../services/subscriptionService");
-// IMPORTAMOS LAS QUERIES QUE SÍ NECESITAMOS
 const { 
   getActiveSubscriptionByUserId, 
   cancelSubscriptionById, 
   getPlanBySubscriptionId 
 } = require("../../queries/payment/subscriptionQueries");
-// const { getPlanById } = require("../../queries/payment/planQueries"); // No lo usamos aquí
 
 /**
  * Obtener la suscripción activa O el plan gratuito por defecto del usuario
@@ -36,14 +32,8 @@ const getActiveSubscription = async (req, res) => {
       if (connection) connection.release();
       return res.status(404).json({ message: "No se encontró un plan activo." });
     }
-    
-    // 3. (OPCIONAL) BUSCAR DATOS DE LA SUSCRIPCIÓN (ej. fecha_fin)
-    //    Si el plan es gratuito, esto devolverá null, lo cual es correcto.
     const subscription = await getActiveSubscriptionByUserId(id_usuario, connection);
 
-    // 4. COMBINAR Y RESPONDER
-    //    El frontend recibirá los detalles del Plan (gratuito o de pago)
-    //    y los detalles de la Suscripción (fecha_fin, etc.) si existe.
     res.status(200).json({ 
       ...subscription, // Datos de la suscripción (o null si es gratis)
       id_plan: plan.id_plan, // Aseguramos el ID del plan
@@ -102,6 +92,7 @@ const cancelActiveSubscription = async (req, res) => {
 };
 
 module.exports = {
+  getActivePlan,
   getActiveSubscription,
-  cancelActiveSubscription
+  cancelActiveSubscription,
 };
