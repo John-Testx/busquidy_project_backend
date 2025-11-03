@@ -250,7 +250,7 @@ const notificarSuscripcionExitosa = async (id_usuario, nombre_plan, connection =
     id_usuario_receptor: id_usuario,
     tipo_notificacion: "suscripcion_exitosa",
     mensaje: `Tu suscripción al Plan ${nombre_plan} se ha activado exitosamente.`,
-    enlace: `/perfil/suscripcion`
+    enlace: `/freelancer-profile/subscription`
   }, connection);
 };
 
@@ -262,7 +262,7 @@ const notificarSuscripcionPorExpirar = async (id_usuario, nombre_plan, dias_rest
     id_usuario_receptor: id_usuario,
     tipo_notificacion: "suscripcion_por_expirar",
     mensaje: `Tu Plan ${nombre_plan} expira en ${dias_restantes} días. ¡Renuévalo para no perder beneficios!`,
-    enlace: `/perfil/suscripcion`
+    enlace: `/freelancer-profile/subscription`
   }, connection);
 };
 
@@ -274,7 +274,7 @@ const notificarSuscripcionExpirada = async (id_usuario, nombre_plan, connection 
     id_usuario_receptor: id_usuario,
     tipo_notificacion: "suscripcion_expirada",
     mensaje: `Tu Plan ${nombre_plan} ha expirado.`,
-    enlace: `/planes`
+    enlace: `/freelancer-profile/subscription`
   }, connection);
 };
 

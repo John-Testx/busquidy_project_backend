@@ -40,6 +40,10 @@ const corsOptions = {
 
       "https://localhost:3000",
 
+      "http://localhost:3001",
+
+      "https://localhost:3001",
+
       process.env.DB_TEST_HOST,
 
       process.env.FRONTEND_URL,

@@ -60,7 +60,72 @@ const sendSupportVerificationCode = async (email, code) => {
   return sendEmail(email, subject, text, html);
 };
 
+/**
+ * Envía un correo con el enlace de recuperación de contraseña
+ * @param {string} email - Email del destinatario
+ * @param {string} resetToken - Token de reseteo (sin hashear)
+ */
+const sendPasswordResetEmail = async (email, resetToken) => {
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+  
+  const subject = `Recuperación de Contraseña - Busquidy`;
+  
+  const text = `Hola,\n\nRecibimos una solicitud para restablecer tu contraseña en Busquidy.\n\nHaz clic en el siguiente enlace para crear una nueva contraseña:\n${resetUrl}\n\nEste enlace expirará en 15 minutos por seguridad.\n\nSi no solicitaste este cambio, puedes ignorar este correo. Tu contraseña actual permanecerá segura.\n\nSaludos,\nEl equipo de Busquidy`;
+  
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+      <div style="background: linear-gradient(135deg, #07767c 0%, #055a5f 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 28px;">Busquidy</h1>
+      </div>
+      
+      <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <h2 style="color: #333; margin-top: 0;">Recuperación de Contraseña</h2>
+        
+        <p style="color: #666; line-height: 1.6; font-size: 16px;">
+          Hola,
+        </p>
+        
+        <p style="color: #666; line-height: 1.6; font-size: 16px;">
+          Recibimos una solicitud para restablecer la contraseña de tu cuenta en <strong>Busquidy</strong>.
+        </p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetUrl}" 
+             style="display: inline-block; padding: 15px 40px; background-color: #07767c; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; transition: background-color 0.3s;">
+            Restablecer Contraseña
+          </a>
+        </div>
+        
+        <p style="color: #666; line-height: 1.6; font-size: 14px;">
+          Si el botón no funciona, copia y pega este enlace en tu navegador:
+        </p>
+        
+        <p style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; word-break: break-all; font-size: 13px; color: #555;">
+          ${resetUrl}
+        </p>
+        
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee;">
+          <p style="color: #999; font-size: 13px; line-height: 1.5;">
+            ⏱️ <strong>Este enlace expirará en 15 minutos</strong> por razones de seguridad.
+          </p>
+          
+          <p style="color: #999; font-size: 13px; line-height: 1.5;">
+            🔒 Si no solicitaste este cambio, puedes ignorar este correo. Tu contraseña actual permanecerá segura.
+          </p>
+        </div>
+      </div>
+      
+      <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
+        <p>© 2024 Busquidy - Conectando talento con oportunidades</p>
+      </div>
+    </div>
+  `;
+
+  return sendEmail(email, subject, text, html);
+};
+
 module.exports = {
   sendEmail,
   sendSupportVerificationCode,
+  sendPasswordResetEmail,
 };

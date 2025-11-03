@@ -8,7 +8,9 @@ const { verifyToken } = require("../middlewares/auth");
 // --- Controladores ---
 const {
   register,
-  login
+  login,
+  forgotPassword, 
+  resetPassword,
 } = require("../controllers/user/authController");
 
 const {
@@ -27,6 +29,8 @@ const { getUsage } = require("../controllers/user/usageController");
 // ============= RUTAS DE AUTENTICACIÓN (Públicas) =============
 router.post("/register", register);
 router.post("/login", login);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 
 // ============= RUTA DE USO DEL USUARIO (Privada) =============
 // ✅ 2. Añadir la nueva ruta de "USO"

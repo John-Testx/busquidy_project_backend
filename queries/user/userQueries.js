@@ -176,6 +176,52 @@ const deleteUserById = async (id_usuario) => {
   return result.affectedRows > 0;
 };
 
+/**
+ * Guarda el token de reseteo de contraseña
+ * @param {string} correo - Correo del usuario
+ * @param {string} hashedToken - Token hasheado
+ * @param {Date} expiresAt - Fecha de expiración
+ */
+const saveResetToken = async (correo, hashedToken, expiresAt) => {
+  const query = `
+    UPDATE usuario 
+    SET reset_token = ?, reset_token_expires = ?
+    WHERE correo = ?
+  `;
+  const [result] = await pool.query(query, [hashedToken, expiresAt, correo]);
+  return result;
+};
+
+/**
+ * Busca un usuario por su token de reseteo
+ * @param {string} hashedToken - Token hasheado
+ * @returns {Promise<Object|null>} Usuario encontrado o null
+ */
+const findUserByResetToken = async (hashedToken) => {
+  const query = `
+    SELECT id_usuario, correo, reset_token_expires 
+    FROM usuario 
+    WHERE reset_token = ? AND reset_token_expires > NOW()
+  `;
+  const [result] = await pool.query(query, [hashedToken]);
+  return result[0] || null;
+};
+
+/**
+ * Actualiza la contraseña y limpia el token de reseteo
+ * @param {number} id_usuario - ID del usuario
+ * @param {string} hashedPassword - Nueva contraseña hasheada
+ */
+const updatePasswordAndClearToken = async (id_usuario, hashedPassword) => {
+  const query = `
+    UPDATE usuario 
+    SET contraseña = ?, reset_token = NULL, reset_token_expires = NULL
+    WHERE id_usuario = ?
+  `;
+  const [result] = await pool.query(query, [hashedPassword, id_usuario]);
+  return result;
+};
+
 module.exports = {
   // Consultas de lectura
   findAllUsersWithRoles,
@@ -195,4 +241,7 @@ module.exports = {
   updateUserEmail,
   updateLastLogin,
   deleteUserById,
+  saveResetToken,
+  findUserByResetToken,
+  updatePasswordAndClearToken,
 };

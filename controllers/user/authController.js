@@ -2,6 +2,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const userQueries = require("../../queries/user/userQueries");
 const profileQueries = require("../../queries/user/profileQueries");
+const crypto = require("crypto");
+const { sendPasswordResetEmail } = require("../../services/emailService");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -94,7 +96,124 @@ const login = async (req, res) => {
   }
 };
 
+/**
+ * Solicita el reseteo de contraseña
+ */
+const forgotPassword = async (req, res) => {
+  const { correo } = req.body;
+
+  try {
+    // Validar que el correo fue proporcionado
+    if (!correo || correo.trim() === '') {
+      return res.status(400).json({ error: "El correo electrónico es requerido" });
+    }
+
+    // Verificar si el usuario existe
+    const result = await userQueries.findUserByEmail(correo);
+    
+    // Por seguridad, siempre respondemos lo mismo (no revelamos si el email existe)
+    if (result.length === 0) {
+      console.log(`Intento de reset para email no registrado: ${correo}`);
+      return res.status(200).json({ 
+        message: "Si el correo está registrado, recibirás un enlace de recuperación" 
+      });
+    }
+
+    const user = result[0];
+
+    // Verificar que el usuario esté activo
+    if (!user.is_active) {
+      return res.status(403).json({ 
+        error: "Esta cuenta está desactivada. Contacta a soporte." 
+      });
+    }
+
+    // Generar token seguro (32 bytes = 64 caracteres hex)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    
+    // Hashear el token antes de guardarlo en la BD
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+
+    // Establecer expiración de 15 minutos
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    // Guardar el token hasheado en la BD
+    await userQueries.saveResetToken(correo, hashedToken, expiresAt);
+
+    // Enviar el correo con el token SIN hashear
+    await sendPasswordResetEmail(correo, resetToken);
+
+    console.log(`✅ Email de recuperación enviado a: ${correo}`);
+    
+    res.status(200).json({ 
+      message: "Si el correo está registrado, recibirás un enlace de recuperación" 
+    });
+
+  } catch (error) {
+    console.error("Error en forgotPassword:", error.message);
+    res.status(500).json({ error: "Error al procesar la solicitud" });
+  }
+};
+
+/**
+ * Resetea la contraseña usando el token
+ */
+const resetPassword = async (req, res) => {
+  const { token, nuevaContraseña } = req.body;
+
+  try {
+    // Validaciones
+    if (!token || !nuevaContraseña) {
+      return res.status(400).json({ 
+        error: "Token y nueva contraseña son requeridos" 
+      });
+    }
+
+    if (nuevaContraseña.length < 6) {
+      return res.status(400).json({ 
+        error: "La contraseña debe tener al menos 6 caracteres" 
+      });
+    }
+
+    // Hashear el token recibido para comparar con la BD
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+
+    // Buscar usuario por token (también verifica que no haya expirado)
+    const user = await userQueries.findUserByResetToken(hashedToken);
+
+    if (!user) {
+      return res.status(400).json({ 
+        error: "Token inválido o expirado. Solicita un nuevo enlace de recuperación." 
+      });
+    }
+
+    // Hashear la nueva contraseña
+    const hashedPassword = await bcrypt.hash(nuevaContraseña, 10);
+
+    // Actualizar la contraseña y limpiar el token
+    await userQueries.updatePasswordAndClearToken(user.id_usuario, hashedPassword);
+
+    console.log(`✅ Contraseña actualizada para usuario ID: ${user.id_usuario}`);
+
+    res.status(200).json({ 
+      message: "Contraseña actualizada exitosamente. Ya puedes iniciar sesión." 
+    });
+
+  } catch (error) {
+    console.error("Error en resetPassword:", error.message);
+    res.status(500).json({ error: "Error al resetear la contraseña" });
+  }
+};
+
 module.exports = {
   register,
-  login
+  login,
+  forgotPassword,  
+  resetPassword,
 };
