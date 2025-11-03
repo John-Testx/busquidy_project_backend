@@ -222,6 +222,41 @@ const updatePasswordAndClearToken = async (id_usuario, hashedPassword) => {
   return result;
 };
 
+
+/**
+ * Obtener usuario por ID de proveedor (ej. Google)
+ */
+const findUserByProviderId = async (provider, providerId) => {
+  // Usamos ${} de forma segura aquí porque 'provider' es un valor controlado internamente (ej. "google_id")
+  const [rows] = await pool.query(
+    `SELECT * FROM usuario WHERE ${provider} = ?`,
+    [providerId]
+  );
+  return rows[0] || null;
+};
+
+/**
+ * Vincula una cuenta de proveedor a un usuario existente por correo
+ */
+const linkProviderToUser = async (id_usuario, provider, providerId) => {
+  const [result] = await pool.query(
+    `UPDATE usuario SET ${provider} = ? WHERE id_usuario = ?`,
+    [providerId, id_usuario]
+  );
+  return result.affectedRows > 0;
+};
+
+/**
+ * Crear nuevo usuario social (sin contraseña)
+ */
+const insertSocialUser = async (correo, tipo_usuario, provider, providerId, connection = pool) => {
+  const [result] = await connection.query(
+    `INSERT INTO usuario (correo, tipo_usuario, ${provider}) VALUES (?, ?, ?)`,
+    [correo, tipo_usuario, providerId]
+  );
+  return result.insertId;
+};
+
 module.exports = {
   // Consultas de lectura
   findAllUsersWithRoles,
@@ -244,4 +279,8 @@ module.exports = {
   saveResetToken,
   findUserByResetToken,
   updatePasswordAndClearToken,
+
+  findUserByProviderId,
+  linkProviderToUser,
+  insertSocialUser,
 };

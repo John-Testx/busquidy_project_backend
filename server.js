@@ -24,7 +24,9 @@ const app = express();
 
 const port = process.env.PORT || 3001;
 
-
+// Carga tu configuración de Passport
+const passport = require("passport");
+require("./config/passport"); 
 
 // ==================== CONFIGURACIÓN DE CORS ====================
 
@@ -95,6 +97,8 @@ const corsOptions = {
 // ==================== MIDDLEWARES ====================
 
 app.use(cors(corsOptions));
+
+app.use(passport.initialize());
 
 app.use(express.static("public"));
 
