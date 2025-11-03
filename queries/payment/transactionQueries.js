@@ -236,6 +236,54 @@ const getPlanIdFromWebpayTransaction = async (token) => {
   return transaction?.plan_id || null;
 };
 
+/**
+ * Obtener transacciones del usuario según su rol
+ * @param {number} userId - ID del usuario
+ * @param {string} userRole - Rol del usuario
+ * @returns {Promise<Array>} Lista de transacciones
+ */
+const fetchTransactionsByUserId = async (userId, userRole) => {
+  let query = `
+    SELECT 
+      p.id_pago,
+      p.monto,
+      p.tipo_pago,
+      p.estado_pago,
+      p.fecha_pago,
+      p.metodo_pago,
+      p.referencia_externa,
+      -- Datos de proyecto (si aplica)
+      pdp.id_proyecto,
+      pr.titulo as proyecto_titulo,
+      -- Datos de suscripción (si aplica)
+      pds.id_suscripcion,
+      s.fecha_inicio as suscripcion_inicio,
+      s.fecha_fin as suscripcion_fin,
+      pl.nombre as plan_nombre
+    FROM pago p
+    LEFT JOIN pago_detalle_proyecto pdp ON p.id_pago = pdp.id_pago
+    LEFT JOIN proyecto pr ON pdp.id_proyecto = pr.id_proyecto
+    LEFT JOIN pago_detalle_suscripcion pds ON p.id_pago = pds.id_pago
+    LEFT JOIN suscripcion s ON pds.id_suscripcion = s.id_suscripcion
+    LEFT JOIN plan pl ON s.id_plan = pl.id_plan
+    WHERE p.id_usuario = ?
+  `;
+
+  const params = [userId];
+
+  // Filtrar por tipo de pago según el rol
+  if (userRole === "freelancer") {
+    query += " AND p.tipo_pago = 'suscripcion'";
+  } else if (userRole === "empresa_juridico" || userRole === "empresa_natural") {
+    query += " AND p.tipo_pago IN ('suscripcion', 'proyecto', 'liberacion_pago')";
+  }
+
+  query += " ORDER BY p.fecha_pago DESC";
+
+  const [rows] = await pool.query(query, params);
+  return rows;
+};
+
 module.exports = {
   // Funciones existentes
   insertPago,
@@ -251,4 +299,5 @@ module.exports = {
   isWebpayTransactionProcessed,
   getProjectIdFromWebpayTransaction,
   getPlanIdFromWebpayTransaction,
+  fetchTransactionsByUserId,
 };

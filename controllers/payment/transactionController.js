@@ -414,8 +414,29 @@ const commitTransaction = async (req, res) => {
   }
 };
 
+/**
+ * Obtener transacciones del usuario logueado
+ */
+const getMyTransactions = async (req, res) => {
+  const userId = req.user.id_usuario;
+  const userRole = req.user.tipo_usuario;
+
+  try {
+    const { fetchTransactionsByUserId } = require("../../queries/payment/transactionQueries");
+    const transactions = await fetchTransactionsByUserId(userId, userRole);
+    res.json(transactions);
+  } catch (error) {
+    console.error("Error al obtener transacciones:", error);
+    res.status(500).json({ 
+      error: "Error al obtener transacciones", 
+      message: error.message 
+    });
+  }
+};
+
 module.exports = {
   createSubscriptionTransaction,
   createProjectTransaction,
   commitTransaction,
+  getMyTransactions,
 };

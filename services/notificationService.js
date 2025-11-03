@@ -38,7 +38,7 @@ const notificarPostulacionRecibida = async (id_freelancer_usuario, nombre_proyec
     id_usuario_receptor: id_freelancer_usuario,
     tipo_notificacion: "postulacion_recibida",
     mensaje: `Tu postulación al proyecto '${nombre_proyecto}' ha sido enviada.`,
-    enlace: `/proyectos/${id_publicacion}`
+    enlace: `/empresa/proyectos/${id_publicacion}`
   }, connection);
 };
 
@@ -50,7 +50,7 @@ const notificarPostulacionAceptada = async (id_freelancer_usuario, nombre_proyec
     id_usuario_receptor: id_freelancer_usuario,
     tipo_notificacion: "postulacion_aceptada",
     mensaje: `¡Felicitaciones! Has sido aceptado para el proyecto '${nombre_proyecto}'.`,
-    enlace: `/proyectos/${id_publicacion}`
+    enlace: "/freelancer-profile/my-postulations"
   }, connection);
 };
 
@@ -62,7 +62,7 @@ const notificarPostulacionRechazada = async (id_freelancer_usuario, nombre_proye
     id_usuario_receptor: id_freelancer_usuario,
     tipo_notificacion: "postulacion_rechazada",
     mensaje: `Tu postulación para '${nombre_proyecto}' fue rechazada por la empresa.`,
-    enlace: null
+    enlace: "/freelancer-profile/my-postulations"
   }, connection);
 };
 
@@ -74,7 +74,7 @@ const notificarSolicitudChatRecibida = async (id_freelancer_usuario, nombre_empr
     id_usuario_receptor: id_freelancer_usuario,
     tipo_notificacion: "solicitud_chat_recibida",
     mensaje: `La Empresa '${nombre_empresa}' quiere chatear contigo sobre tu postulación.`,
-    enlace: `/solicitudes/${id_solicitud}`
+    enlace: "/chat" // Mas adelante me deberia de redirigir a la conversacion de chat`/solicitudes/${id_solicitud}` 
   }, connection);
 };
 
@@ -87,7 +87,7 @@ const notificarSolicitudEntrevistaRecibida = async (id_freelancer_usuario, nombr
     id_usuario_receptor: id_freelancer_usuario,
     tipo_notificacion: "solicitud_entrevista_recibida",
     mensaje: `'${nombre_empresa}' te ha invitado a una entrevista para el proyecto '${nombre_proyecto}'${fechaFormateada ? ` el ${fechaFormateada}` : ''}.`,
-    enlace: `/solicitudes/${id_solicitud}`
+    enlace: `/solicitudes/${id_solicitud}` // deberia de redigir a un modal o interfaz.
   }, connection);
 };
 
@@ -99,7 +99,7 @@ const notificarPagoLiberado = async (id_freelancer_usuario, nombre_empresa, mont
     id_usuario_receptor: id_freelancer_usuario,
     tipo_notificacion: "pago_liberado",
     mensaje: `'${nombre_empresa}' ha liberado tu pago de $${monto.toLocaleString('es-CL')} por el proyecto '${nombre_proyecto}'.`,
-    enlace: `/pagos/${id_pago}`
+    enlace: `/empresa/proyectos/${id_publicacion}` 
   }, connection);
 };
 
@@ -137,10 +137,7 @@ const notificarNuevaPostulacion = async (id_empresa_usuario, nombre_freelancer, 
     id_usuario_receptor: id_empresa_usuario,
     tipo_notificacion: "nueva_postulacion",
     mensaje: `'${nombre_freelancer}' ha postulado a tu proyecto '${nombre_proyecto}'.`,
-    
-    // Corregimos la URL para que coincida con AppRoutes.jsx
     enlace: `/empresa/proyectos/${id_proyecto}` 
-    // enlace: `/proyectos/postulaciones/${id_postulacion}` // <- ESTA ERA LA RUTA INCORRECTA
   }, connection);
 };
 
@@ -164,7 +161,7 @@ const notificarProyectoPagoExitoso = async (id_empresa_usuario, nombre_proyecto,
     id_usuario_receptor: id_empresa_usuario,
     tipo_notificacion: "proyecto_pago_exitoso",
     mensaje: `El pago para publicar tu proyecto '${nombre_proyecto}' fue exitoso.`,
-    enlace: `/myprojects/${id_proyecto}`
+    enlace: `/empresa/proyectos/${id_proyecto}`
   }, connection);
 };
 

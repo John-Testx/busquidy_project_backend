@@ -1,5 +1,6 @@
 const userQueries = require("../../queries/user/userQueries");
 const profileQueries = require("../../queries/user/profileQueries");
+const bcrypt = require("bcryptjs");
 
 /**
  * Controlador de gestión de usuarios
@@ -126,11 +127,86 @@ const deleteUser = async (req, res) => {
   }
 };
 
+/**
+ * Actualizar credenciales de usuario (email y/o contraseña)
+ */
+const updateCredentials = async (req, res) => {
+  const userId = req.user.id_usuario;
+  const { currentPassword, newEmail, newPassword } = req.body;
+
+  try {
+    // Validar que se haya proporcionado al menos un cambio
+    if (!newEmail && !newPassword) {
+      return res.status(400).json({ 
+        error: "Debes proporcionar al menos un nuevo email o una nueva contraseña" 
+      });
+    }
+
+    // Validar contraseña actual
+    if (!currentPassword) {
+      return res.status(400).json({ 
+        error: "Debes proporcionar tu contraseña actual" 
+      });
+    }
+
+    // Verificar que el usuario existe y obtener su contraseña actual
+    const user = await userQueries.findUserById(userId);
+    if (!user || user.length === 0) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    // Verificar contraseña actual
+    const isPasswordValid = await bcrypt.compare(currentPassword, user[0].contraseña);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: "La contraseña actual es incorrecta" });
+    }
+
+    // Actualizar email si se proporciona
+    if (newEmail) {
+      // Validar formato de email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newEmail)) {
+        return res.status(400).json({ error: "El formato del email no es válido" });
+      }
+
+      // Verificar que el email no esté en uso por otro usuario
+      const existingUser = await userQueries.findUserByEmail(newEmail);
+      if (existingUser.length > 0 && existingUser[0].id_usuario !== userId) {
+        return res.status(400).json({ error: "Este email ya está en uso" });
+      }
+
+      await userQueries.updateUserEmail(userId, newEmail);
+    }
+
+    // Actualizar contraseña si se proporciona
+    if (newPassword) {
+      // Validar longitud de contraseña
+      if (newPassword.length < 6) {
+        return res.status(400).json({ 
+          error: "La nueva contraseña debe tener al menos 6 caracteres" 
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await userQueries.updateUserPassword(userId, hashedPassword);
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Credenciales actualizadas exitosamente" 
+    });
+  } catch (error) {
+    console.error("Error al actualizar credenciales:", error);
+    res.status(500).json({ error: "Error al actualizar credenciales" });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
   updateUserStatus,
   updateUserDetails,
   getUsersWithData,
-  deleteUser
+  deleteUser,
+  updateCredentials
 };

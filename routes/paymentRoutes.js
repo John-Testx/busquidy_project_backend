@@ -5,6 +5,7 @@ const router = express.Router();
 const planController = require("../controllers/payment/planController");
 const transactionController = require("../controllers/payment/transactionController");
 const historyController = require("../controllers/payment/historyController");
+const { verifyToken } = require("../middlewares/auth");
 
 // Middlewares (si necesitas agregar autenticación en el futuro)
 // const { verifyToken } = require("../middlewares/auth");
@@ -48,5 +49,12 @@ router.get("/pagos-proyectos", historyController.getProjectPaymentHistory);
  * Obtener historial de pagos de suscripciones
  */
 router.get("/pagos-suscripciones", historyController.getSubscriptionPaymentHistory);
+
+// ==================== RUTA DE TRANSACCIONES DEL USUARIO ====================
+/**
+ * GET /api/payments/my-transactions
+ * Obtener transacciones del usuario logueado
+ */
+router.get("/my-transactions", verifyToken, transactionController.getMyTransactions);
 
 module.exports = router;

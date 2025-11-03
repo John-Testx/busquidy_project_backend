@@ -19,7 +19,8 @@ const {
   updateUserStatus,
   updateUserDetails,
   getUsersWithData,
-  deleteUser
+  deleteUser,
+  updateCredentials,
 } = require("../controllers/user/userManagementController");
 
 // ✅ 1. Importar el nuevo controlador de "USO"
@@ -38,6 +39,12 @@ router.post("/reset-password", resetPassword);
 // ¡DEBE estar protegida por verifyToken!
 router.get("/me/usage", verifyToken, getUsage);
 
+// ============= RUTA DE ACTUALIZACIÓN DE CREDENCIALES (Privada) =============
+/**
+ * PUT /api/users/update-credentials
+ * Actualizar email y/o contraseña del usuario logueado
+ */
+router.put("/update-credentials", verifyToken, updateCredentials);
 
 // ============= RUTAS DE GESTIÓN DE USUARIOS (Para Admin) =============
 // (Estas rutas deberían estar protegidas por un middleware de Admin)
