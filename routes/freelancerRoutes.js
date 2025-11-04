@@ -42,6 +42,20 @@ router.post("/add-freelancer/:id_usuario/:itemType", sectionsController.addItem)
 // Eliminar idioma o habilidad
 router.delete("/delete-idioma-habilidad/:id_usuario/:seccion/:id", sectionsController.deleteItem);
 
+
+// ============================================
+// RUTAS CRUD PARA SECCIONES DEL PERFIL
+// ============================================
+
+// Crear nuevo ítem en una sección
+router.post("/profile/section", verifyToken, sectionsController.addSectionItem);
+
+// Actualizar ítem existente en una sección
+router.put("/profile/section/:itemId", verifyToken, sectionsController.updateSectionItem);
+
+// Eliminar ítem de una sección
+router.delete("/profile/section/:itemId", verifyToken, sectionsController.deleteSectionItem);
+
 // ============================================
 // RUTAS DE BÚSQUEDA Y LISTADO
 // ============================================
