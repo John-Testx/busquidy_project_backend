@@ -11,21 +11,22 @@ const findPostulationsByProjectId = async (id_proyecto) => {
   const [rows] = await pool.query(
     `SELECT 
       p.*,
+      f.id_usuario, 
       ap.nombres,
       ap.apellidos,
       f.correo_contacto,
       f.telefono_contacto,
-      es.carrera AS titulo_profesional,
-      tp.empresa AS ultima_empresa,
-      tp.cargo AS ultimo_cargo,
+      (SELECT es.carrera FROM educacion_superior es WHERE es.id_freelancer = f.id_freelancer ORDER BY es.ano_termino DESC LIMIT 1) AS titulo_profesional,
+      (SELECT tp.empresa FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultima_empresa,
+      (SELECT tp.cargo FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultimo_cargo,
       pr.renta_esperada
     FROM postulacion p
-    LEFT JOIN freelancer f ON p.id_usuario = f.id_usuario
+    JOIN publicacion_proyecto pp ON p.id_publicacion = pp.id_publicacion
+    JOIN freelancer f ON p.id_freelancer = f.id_freelancer
     LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
-    LEFT JOIN educacion_superior es ON f.id_freelancer = es.id_freelancer
-    LEFT JOIN trabajo_practica tp ON f.id_freelancer = tp.id_freelancer
     LEFT JOIN pretensiones pr ON f.id_freelancer = pr.id_freelancer
-    WHERE p.id_proyecto = ?
+    WHERE pp.id_proyecto = ?
+    GROUP BY p.id_postulacion
     ORDER BY p.fecha_postulacion DESC`,
     [id_proyecto]
   );
@@ -39,21 +40,21 @@ const findPostulationsByPublicationId = async (id_publicacion) => {
   const [rows] = await pool.query(
     `SELECT 
       p.*,
+      f.id_usuario,
       ap.nombres,
       ap.apellidos,
       f.correo_contacto,
       f.telefono_contacto,
-      es.carrera AS titulo_profesional,
-      tp.empresa AS ultima_empresa,
-      tp.cargo AS ultimo_cargo,
+      (SELECT es.carrera FROM educacion_superior es WHERE es.id_freelancer = f.id_freelancer ORDER BY es.ano_termino DESC LIMIT 1) AS titulo_profesional,
+      (SELECT tp.empresa FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultima_empresa,
+      (SELECT tp.cargo FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultimo_cargo,
       pr.renta_esperada
     FROM postulacion p
-    LEFT JOIN freelancer f ON p.id_usuario = f.id_usuario
+    JOIN freelancer f ON p.id_freelancer = f.id_freelancer
     LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
-    LEFT JOIN educacion_superior es ON f.id_freelancer = es.id_freelancer
-    LEFT JOIN trabajo_practica tp ON f.id_freelancer = tp.id_freelancer
     LEFT JOIN pretensiones pr ON f.id_freelancer = pr.id_freelancer
     WHERE p.id_publicacion = ?
+    GROUP BY p.id_postulacion
     ORDER BY p.fecha_postulacion DESC`,
     [id_publicacion]
   );
@@ -71,7 +72,6 @@ const checkIfUserApplied = async (id_usuario, id_publicacion) => {
     `SELECT id_freelancer FROM freelancer WHERE id_usuario = ?`,
     [id_usuario]
   );
-  // Si no existe perfil de freelancer, no puede haber postulado
   if (freelancerRows.length === 0) {
     return false;
   }
@@ -92,17 +92,15 @@ const checkIfUserApplied = async (id_usuario, id_publicacion) => {
  * @returns {Promise<number>} ID de la postulación creada
  */
 const createPostulation = async (id_usuario, id_publicacion) => {
-  // 1. Obtener el id_freelancer a partir del id_usuario
   const [freelancerRows] = await pool.query(
     `SELECT id_freelancer FROM freelancer WHERE id_usuario = ?`,
     [id_usuario]
   );
-  // Si no hay perfil, lanzamos el error que estabas buscando (FK constraint)
   if (freelancerRows.length === 0) {
     throw new Error('No existe un perfil de freelancer para este usuario. No se puede postular.');
   }
   const id_freelancer = freelancerRows[0].id_freelancer;
-  // 2. Verificar si ya existe una postulación CON EL ID_FREELANCER
+
   const [existingPostulation] = await pool.query(
     `SELECT id_postulacion 
      FROM postulacion 
@@ -114,10 +112,9 @@ const createPostulation = async (id_usuario, id_publicacion) => {
     throw new Error('Ya has postulado a este proyecto');
   }
 
-  // 3. Crear la postulación usando id_freelancer
   const [result] = await pool.query(
     `INSERT INTO postulacion ( id_publicacion, id_freelancer, fecha_postulacion, estado_postulacion)
-     VALUES (?, ?, NOW(), 'pendiente')`, //
+     VALUES (?, ?, NOW(), 'pendiente')`,
     [id_publicacion, id_freelancer] 
   );
   return result.insertId;
@@ -129,6 +126,16 @@ const createPostulation = async (id_usuario, id_publicacion) => {
  * @returns {Promise<Array>} Lista de postulaciones
  */
 const findPostulationsByUserId = async (id_usuario) => {
+  const [freelancerRows] = await pool.query(
+    `SELECT id_freelancer FROM freelancer WHERE id_usuario = ?`,
+    [id_usuario]
+  );
+
+  if (freelancerRows.length === 0) {
+    return []; 
+  }
+  const id_freelancer = freelancerRows[0].id_freelancer;
+
   const [rows] = await pool.query(
     `SELECT 
       p.id_postulacion,
@@ -146,9 +153,9 @@ const findPostulationsByUserId = async (id_usuario) => {
     FROM postulacion p
     INNER JOIN publicacion pub ON p.id_publicacion = pub.id_publicacion
     LEFT JOIN empresa e ON pub.id_usuario = e.id_usuario
-    WHERE p.id_usuario = ?
+    WHERE p.id_freelancer = ?
     ORDER BY p.fecha_postulacion DESC`,
-    [id_usuario]
+    [id_freelancer]
   );
   return rows;
 };
