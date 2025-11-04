@@ -95,4 +95,37 @@ router.get("/freelancer/:id/cv", cvController.getCVUrl);
 // Rutas para la gestión de disponibilidad del freelancer
 router.use('/availability', availabilityRoutes);
 
+// ============================================
+// RUTAS DE FOTO DE PERFIL
+// ============================================
+
+const { uploadProfilePhoto } = require("../middlewares/upload");
+
+// Subir foto de perfil
+router.post("/upload-photo/:id_usuario", 
+  verifyToken, 
+  uploadProfilePhoto.single("photo"), 
+  profileController.uploadProfilePhoto
+);
+
+// Obtener URL de la foto de perfil
+router.get("/photo/:id_usuario", profileController.getProfilePhoto);
+
+// ============================================
+// RUTAS DE DESCARGA CV BUSQUIDY
+// ============================================
+
+// Descargar CV en formato Busquidy (PDF)
+router.get("/download-cv/:id_usuario", cvController.downloadBusquidyCV);
+
+// ============================================
+// RUTAS DE PREFERENCIAS
+// ============================================
+
+// Obtener preferencias del freelancer
+router.get("/preferencias/:id_usuario", profileController.getPreferencias);
+
+// Actualizar preferencias del freelancer
+router.put("/preferencias/:id_usuario", verifyToken, profileController.updatePreferencias);
+
 module.exports = router;

@@ -48,6 +48,49 @@ const uploadCV = multer({
   fileFilter: cvFileFilter
 });
 
+// Configuración de almacenamiento para fotos de perfil
+const profilePhotoStorage = multer.diskStorage({
+  destination: function(req, file, cb) {
+    const photoDir = "uploads/profile-photos";
+    if (!fs.existsSync(photoDir)) {
+      fs.mkdirSync(photoDir, { recursive: true });
+    }
+    cb(null, photoDir);
+  },
+  filename: function(req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const filename = `profile-${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    cb(null, filename);
+  }
+});
+
+/**
+ * Filtro de archivos para fotos de perfil (JPG, JPEG, PNG)
+ */
+const photoFileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+  
+  if (extname && mimetype) {
+    return cb(null, true);
+  } else {
+    cb(new Error("Solo se permiten imágenes JPG, JPEG y PNG"));
+  }
+};
+
+/**
+ * Middleware de upload para fotos de perfil
+ */
+const uploadProfilePhoto = multer({
+  storage: profilePhotoStorage,
+  limits: {
+    fileSize: 2 * 1024 * 1024 // 2MB máximo
+  },
+  fileFilter: photoFileFilter
+});
+
 module.exports = {
-  uploadCV
+  uploadCV,
+  uploadProfilePhoto
 };

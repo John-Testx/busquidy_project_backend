@@ -168,7 +168,7 @@ const deleteItem = async (req, res) => {
  */
 const addSectionItem = async (req, res) => {
   const { tipo_seccion, ...data } = req.body;
-  const id_usuario = req.user.id; // Obtenido del token JWT
+  const id_usuario = req.user.id_usuario; // Obtenido del token JWT
 
   if (!tipo_seccion) {
     return res.status(400).json({ error: "El tipo de sección es requerido" });
@@ -239,7 +239,7 @@ const addSectionItem = async (req, res) => {
 const updateSectionItem = async (req, res) => {
   const { itemId } = req.params;
   const { tipo_seccion, ...data } = req.body;
-  const id_usuario = req.user.id;
+  const id_usuario = req.user.id_usuario;
 
   if (!tipo_seccion) {
     return res.status(400).json({ error: "El tipo de sección es requerido" });
@@ -327,7 +327,7 @@ const updateSectionItem = async (req, res) => {
 const deleteSectionItem = async (req, res) => {
   const { itemId } = req.params;
   const { tipo_seccion } = req.body;
-  const id_usuario = req.user.id;
+  const id_usuario = req.user.id_usuario;
 
   if (!tipo_seccion) {
     return res.status(400).json({ error: "El tipo de sección es requerido" });

@@ -209,9 +209,144 @@ const updateProfileLegacy = async (req, res) => {
   }
 };
 
+/**
+ * Subir foto de perfil
+ */
+const uploadProfilePhoto = async (req, res) => {
+  const { id_usuario } = req.params;
+  const file = req.file;
+
+  if (!file) {
+    return res.status(400).json({ error: "No se ha proporcionado ninguna imagen." });
+  }
+
+  try {
+    const photo_url = `/uploads/profile-photos/${file.filename}`;
+
+    // Obtener id_freelancer
+    const freelancerResults = await getFreelancerByUserId(id_usuario);
+    if (freelancerResults.length === 0) {
+      // Limpiar archivo subido
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+      return res.status(404).json({ error: "Freelancer no encontrado" });
+    }
+
+    const id_freelancer = freelancerResults[0].id_freelancer;
+
+    // Actualizar foto de perfil en la BD
+    await profileQueries.updateProfilePhoto(id_freelancer, photo_url);
+
+    return res.status(200).json({
+      message: "Foto de perfil actualizada correctamente.",
+      photo_url
+    });
+
+  } catch (error) {
+    console.error("Error al subir la foto de perfil:", error);
+
+    // Limpiar el archivo subido en caso de error
+    if (file && fs.existsSync(file.path)) {
+      try {
+        fs.unlinkSync(file.path);
+      } catch (unlinkError) {
+        console.error("Error al eliminar archivo:", unlinkError);
+      }
+    }
+
+    return res.status(500).json({
+      error: "Error al subir la foto de perfil.",
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * Obtener URL de la foto de perfil
+ */
+const getProfilePhoto = async (req, res) => {
+  const { id_usuario } = req.params;
+
+  try {
+    const freelancerResults = await getFreelancerByUserId(id_usuario);
+    if (freelancerResults.length === 0) {
+      return res.status(404).json({ error: "Freelancer no encontrado" });
+    }
+
+    const photo_url = freelancerResults[0].photo_url;
+
+    res.status(200).json({ photo_url: photo_url || null });
+  } catch (error) {
+    console.error("Error al obtener la foto de perfil:", error);
+    res.status(500).json({ error: "Error al obtener la foto de perfil" });
+  }
+};
+
+/**
+ * Obtener preferencias del freelancer
+ */
+const getPreferencias = async (req, res) => {
+  const { id_usuario } = req.params;
+
+  try {
+    const freelancerResults = await getFreelancerByUserId(id_usuario);
+    if (freelancerResults.length === 0) {
+      return res.status(404).json({ error: "Freelancer no encontrado" });
+    }
+
+    const id_freelancer = freelancerResults[0].id_freelancer;
+    const preferencias = await profileQueries.getPreferencias(id_freelancer);
+
+    res.status(200).json({ preferencias });
+  } catch (error) {
+    console.error("Error al obtener preferencias:", error);
+    res.status(500).json({ error: "Error al obtener preferencias" });
+  }
+};
+
+/**
+ * Actualizar preferencias del freelancer
+ */
+const updatePreferencias = async (req, res) => {
+  const { id_usuario } = req.params;
+  const { ofertas_empleo, practicas, trabajo_estudiantes } = req.body;
+
+  try {
+    const freelancerResults = await getFreelancerByUserId(id_usuario);
+    if (freelancerResults.length === 0) {
+      return res.status(404).json({ error: "Freelancer no encontrado" });
+    }
+
+    const id_freelancer = freelancerResults[0].id_freelancer;
+    
+    await profileQueries.updatePreferencias(id_freelancer, {
+      ofertas_empleo: ofertas_empleo ? 1 : 0,
+      practicas: practicas ? 1 : 0,
+      trabajo_estudiantes: trabajo_estudiantes ? 1 : 0
+    });
+
+    res.status(200).json({ 
+      message: "Preferencias actualizadas correctamente",
+      preferencias: {
+        ofertas_empleo,
+        practicas,
+        trabajo_estudiantes
+      }
+    });
+  } catch (error) {
+    console.error("Error al actualizar preferencias:", error);
+    res.status(500).json({ error: "Error al actualizar preferencias" });
+  }
+};
+
 module.exports = {
   checkProfileExists,
   getOwnProfile,
   createProfile,
-  updateProfileLegacy
+  updateProfileLegacy,
+  uploadProfilePhoto,
+  getProfilePhoto,
+  getPreferencias,
+  updatePreferencias
 };
