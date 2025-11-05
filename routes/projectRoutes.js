@@ -24,7 +24,8 @@ const {
   getPostulationsByProjectId,
   getPostulationsByPublicationId,
   checkIfUserAppliedToPublication,
-  createPostulation
+  createPostulation,
+  hireFreelancer,
 } = require("../controllers/project/postulationController");
 
 // ============= RUTAS DE PROYECTOS =============
@@ -46,6 +47,7 @@ router.get("/publicacion", getAllPublications);
 // ============= RUTAS DE POSTULACIONES =============
 router.get("/:id_proyecto/postulaciones", getPostulationsByProjectId);
 router.get("/publicacion/:id_publicacion/postulaciones", getPostulationsByPublicationId);
+router.post('/:id_postulacion/hire', verifyToken, hireFreelancer);
 
 // Nueva ruta para verificar si el usuario ya postuló (requiere autenticación)
 router.get("/publicacion/:id_publicacion/check-application", optionalAuth, checkIfUserAppliedToPublication);

@@ -5,7 +5,7 @@ const pool = require("../../db");
  */
 
 /**
- * Buscar postulaciones por ID de proyecto
+ * Buscar postulaciones por ID de proyecto CON estado de solicitud
  */
 const findPostulationsByProjectId = async (id_proyecto) => {
   const [rows] = await pool.query(
@@ -19,12 +19,18 @@ const findPostulationsByProjectId = async (id_proyecto) => {
       (SELECT es.carrera FROM educacion_superior es WHERE es.id_freelancer = f.id_freelancer ORDER BY es.ano_termino DESC LIMIT 1) AS titulo_profesional,
       (SELECT tp.empresa FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultima_empresa,
       (SELECT tp.cargo FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultimo_cargo,
-      pr.renta_esperada
+      pr.renta_esperada,
+      CASE 
+        WHEN sc.id_solicitud IS NOT NULL AND sc.estado_solicitud = 'pendiente' 
+        THEN TRUE 
+        ELSE FALSE 
+      END AS solicitud_pendiente
     FROM postulacion p
     JOIN publicacion_proyecto pp ON p.id_publicacion = pp.id_publicacion
     JOIN freelancer f ON p.id_freelancer = f.id_freelancer
     LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
     LEFT JOIN pretensiones pr ON f.id_freelancer = pr.id_freelancer
+    LEFT JOIN solicitudes_contacto sc ON p.id_postulacion = sc.id_postulacion AND sc.estado_solicitud = 'pendiente'
     WHERE pp.id_proyecto = ?
     GROUP BY p.id_postulacion
     ORDER BY p.fecha_postulacion DESC`,
@@ -34,7 +40,7 @@ const findPostulationsByProjectId = async (id_proyecto) => {
 };
 
 /**
- * Buscar postulaciones por ID de publicación
+ * Buscar postulaciones por ID de publicación CON estado de solicitud
  */
 const findPostulationsByPublicationId = async (id_publicacion) => {
   const [rows] = await pool.query(
@@ -48,11 +54,17 @@ const findPostulationsByPublicationId = async (id_publicacion) => {
       (SELECT es.carrera FROM educacion_superior es WHERE es.id_freelancer = f.id_freelancer ORDER BY es.ano_termino DESC LIMIT 1) AS titulo_profesional,
       (SELECT tp.empresa FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultima_empresa,
       (SELECT tp.cargo FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultimo_cargo,
-      pr.renta_esperada
+      pr.renta_esperada,
+      CASE 
+        WHEN sc.id_solicitud IS NOT NULL AND sc.estado_solicitud = 'pendiente' 
+        THEN TRUE 
+        ELSE FALSE 
+      END AS solicitud_pendiente
     FROM postulacion p
     JOIN freelancer f ON p.id_freelancer = f.id_freelancer
     LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
     LEFT JOIN pretensiones pr ON f.id_freelancer = pr.id_freelancer
+    LEFT JOIN solicitudes_contacto sc ON p.id_postulacion = sc.id_postulacion AND sc.estado_solicitud = 'pendiente'
     WHERE p.id_publicacion = ?
     GROUP BY p.id_postulacion
     ORDER BY p.fecha_postulacion DESC`,

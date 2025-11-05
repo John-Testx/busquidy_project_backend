@@ -74,7 +74,7 @@ const notificarSolicitudChatRecibida = async (id_freelancer_usuario, nombre_empr
     id_usuario_receptor: id_freelancer_usuario,
     tipo_notificacion: "solicitud_chat_recibida",
     mensaje: `La Empresa '${nombre_empresa}' quiere chatear contigo sobre tu postulación.`,
-    enlace: "/chat" // Mas adelante me deberia de redirigir a la conversacion de chat`/solicitudes/${id_solicitud}` 
+    enlace: `/chat/${id_solicitud}` // Mas adelante me deberia de redirigir a la conversacion de chat`/solicitudes/${id_solicitud}` 
   }, connection);
 };
 
@@ -87,7 +87,7 @@ const notificarSolicitudEntrevistaRecibida = async (id_freelancer_usuario, nombr
     id_usuario_receptor: id_freelancer_usuario,
     tipo_notificacion: "solicitud_entrevista_recibida",
     mensaje: `'${nombre_empresa}' te ha invitado a una entrevista para el proyecto '${nombre_proyecto}'${fechaFormateada ? ` el ${fechaFormateada}` : ''}.`,
-    enlace: `/solicitudes/${id_solicitud}` // deberia de redigir a un modal o interfaz.
+    enlace: `/interview/request/${id_solicitud}` // deberia de redigir a un modal o interfaz.
   }, connection);
 };
 
@@ -209,7 +209,7 @@ const notificarSolicitudEntrevistaAceptada = async (id_empresa_usuario, nombre_f
     id_usuario_receptor: id_empresa_usuario,
     tipo_notificacion: "solicitud_entrevista_aceptada",
     mensaje: `'${nombre_freelancer}' aceptó tu invitación a la entrevista.`,
-    enlace: `/entrevistas/${id_entrevista}`
+    enlace: `/empresa/proyectos/${id_proyecto}` 
   }, connection);
 };
 

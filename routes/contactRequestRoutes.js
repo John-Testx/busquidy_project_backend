@@ -3,10 +3,6 @@ const router = express.Router();
 const contactRequestController = require("../controllers/contact/contactRequestController");
 const { verifyToken } = require("../middlewares/auth");
 
-/**
- * Rutas de solicitudes de contacto
- */
-
 // Crear solicitud
 router.post("/", verifyToken, contactRequestController.crearSolicitud);
 
@@ -15,5 +11,8 @@ router.patch("/:id_solicitud/responder", verifyToken, contactRequestController.r
 
 // Obtener solicitudes del usuario
 router.get("/", verifyToken, contactRequestController.obtenerSolicitudes);
+
+// ✅ NUEVA RUTA: Obtener detalles de una solicitud específica
+router.get("/:id_solicitud", verifyToken, contactRequestController.obtenerSolicitudPorId);
 
 module.exports = router;

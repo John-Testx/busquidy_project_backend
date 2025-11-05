@@ -25,7 +25,8 @@ const getPostulationsByProjectId = async (req, res) => {
       correo: post.correo_contacto || '',
       telefono: post.telefono_contacto || '',
       fecha_postulacion: post.fecha_postulacion,
-      estado_postulacion: post.estado_postulacion
+      estado_postulacion: post.estado_postulacion,
+      solicitud_pendiente: post.solicitud_pendiente // ✅ NUEVO CAMPO
     }));
 
     res.json(formattedPostulations);
@@ -58,7 +59,8 @@ const getPostulationsByPublicationId = async (req, res) => {
       correo: post.correo_contacto || '',
       telefono: post.telefono_contacto || '',
       fecha_postulacion: post.fecha_postulacion,
-      estado_postulacion: post.estado_postulacion
+      estado_postulacion: post.estado_postulacion,
+      solicitud_pendiente: post.solicitud_pendiente // ✅ NUEVO CAMPO
     }));
 
     res.json(formattedPostulations);
@@ -165,9 +167,127 @@ const createPostulation = async (req, res) => {
   }
 };
 
+/**
+ * ✅ NUEVO: Contratar a un freelancer (aceptar postulación y habilitar chat)
+ */
+const hireFreelancer = async (req, res) => {
+  const { id_postulacion } = req.params;
+  const { id_usuario } = req.user; // Usuario empresa
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Obtener datos de la postulación
+    const { getPostulacionData } = require('../../queries/notification/notificationHelperQueries');
+    const postulacionData = await getPostulacionData(id_postulacion, connection);
+
+    if (!postulacionData) {
+      await connection.rollback();
+      return res.status(404).json({ error: "Postulación no encontrada" });
+    }
+
+    // Verificar que el usuario sea el dueño del proyecto
+    if (postulacionData.id_usuario_empresa !== id_usuario) {
+      await connection.rollback();
+      return res.status(403).json({ error: "No tienes permiso para contratar en este proyecto" });
+    }
+
+    // ✅ Actualizar estado de la postulación a 'aceptada' o 'en proceso'
+    await connection.query(
+      "UPDATE postulacion SET estado_postulacion = 'aceptada' WHERE id_postulacion = ?",
+      [id_postulacion]
+    );
+
+    // ✅ Crear conversación automáticamente
+    const [user1, user2] = [postulacionData.id_usuario_empresa, postulacionData.id_usuario_freelancer].sort((a, b) => a - b);
+    
+    const [existingConv] = await connection.query(
+      "SELECT id_conversation FROM conversations WHERE id_user_one = ? AND id_user_two = ?",
+      [user1, user2]
+    );
+
+    let id_conversation;
+    if (existingConv.length > 0) {
+      id_conversation = existingConv[0].id_conversation;
+    } else {
+      const [convResult] = await connection.query(
+        "INSERT INTO conversations (id_user_one, id_user_two) VALUES (?, ?)",
+        [user1, user2]
+      );
+      id_conversation = convResult.insertId;
+    }
+
+    // ✅ Enviar notificaciones a ambas partes
+    const { notificarPostulacionAceptada } = require('../../services/notificationService');
+    
+    // Notificar al freelancer
+    await notificarPostulacionAceptada(
+      postulacionData.id_usuario_freelancer,
+      postulacionData.nombre_proyecto,
+      postulacionData.id_publicacion,
+      connection
+    );
+
+    // Notificar a la empresa (opcional)
+    await connection.query(
+      `INSERT INTO notificaciones 
+       (id_usuario_receptor, tipo_notificacion, mensaje, enlace) 
+       VALUES (?, ?, ?, ?)`,
+      [
+        postulacionData.id_usuario_empresa,
+        'freelancer_contratado',
+        `Has contratado a '${postulacionData.nombre_freelancer}' para el proyecto '${postulacionData.nombre_proyecto}'.`,
+        `/chat/${id_conversation}`
+      ]
+    );
+
+    await connection.commit();
+
+    // ✅ Emitir notificaciones en tiempo real
+    try {
+      const io = req.app.get('socketio');
+      
+      if (io) {
+        // Notificar al freelancer
+        io.to(`user_${postulacionData.id_usuario_freelancer}`).emit('new_notification', {
+          tipo: 'postulacion_aceptada',
+          mensaje: `¡Felicitaciones! Has sido contratado para el proyecto '${postulacionData.nombre_proyecto}'.`,
+          enlace: `/chat/${id_conversation}`,
+          fecha: new Date()
+        });
+
+        // Notificar a la empresa
+        io.to(`user_${postulacionData.id_usuario_empresa}`).emit('new_notification', {
+          tipo: 'freelancer_contratado',
+          mensaje: `Has contratado a '${postulacionData.nombre_freelancer}'. Ya pueden chatear.`,
+          enlace: `/chat/${id_conversation}`,
+          fecha: new Date()
+        });
+      }
+    } catch (socketError) {
+      console.error("⚠️ Error al emitir notificación por socket:", socketError);
+    }
+
+    res.json({ 
+      message: "Freelancer contratado exitosamente",
+      id_conversation
+    });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Error al contratar freelancer:", error);
+    res.status(500).json({ error: "Error al contratar al freelancer" });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
 module.exports = {
   getPostulationsByProjectId,
   getPostulationsByPublicationId,
   checkIfUserAppliedToPublication,
-  createPostulation
+  createPostulation,
+  hireFreelancer,
 };
