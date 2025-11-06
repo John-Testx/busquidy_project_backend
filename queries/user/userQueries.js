@@ -176,6 +176,87 @@ const deleteUserById = async (id_usuario) => {
   return result.affectedRows > 0;
 };
 
+/**
+ * Guarda el token de reseteo de contraseña
+ * @param {string} correo - Correo del usuario
+ * @param {string} hashedToken - Token hasheado
+ * @param {Date} expiresAt - Fecha de expiración
+ */
+const saveResetToken = async (correo, hashedToken, expiresAt) => {
+  const query = `
+    UPDATE usuario 
+    SET reset_token = ?, reset_token_expires = ?
+    WHERE correo = ?
+  `;
+  const [result] = await pool.query(query, [hashedToken, expiresAt, correo]);
+  return result;
+};
+
+/**
+ * Busca un usuario por su token de reseteo
+ * @param {string} hashedToken - Token hasheado
+ * @returns {Promise<Object|null>} Usuario encontrado o null
+ */
+const findUserByResetToken = async (hashedToken) => {
+  const query = `
+    SELECT id_usuario, correo, reset_token_expires 
+    FROM usuario 
+    WHERE reset_token = ? AND reset_token_expires > NOW()
+  `;
+  const [result] = await pool.query(query, [hashedToken]);
+  return result[0] || null;
+};
+
+/**
+ * Actualiza la contraseña y limpia el token de reseteo
+ * @param {number} id_usuario - ID del usuario
+ * @param {string} hashedPassword - Nueva contraseña hasheada
+ */
+const updatePasswordAndClearToken = async (id_usuario, hashedPassword) => {
+  const query = `
+    UPDATE usuario 
+    SET contraseña = ?, reset_token = NULL, reset_token_expires = NULL
+    WHERE id_usuario = ?
+  `;
+  const [result] = await pool.query(query, [hashedPassword, id_usuario]);
+  return result;
+};
+
+
+/**
+ * Obtener usuario por ID de proveedor (ej. Google)
+ */
+const findUserByProviderId = async (provider, providerId) => {
+  // Usamos ${} de forma segura aquí porque 'provider' es un valor controlado internamente (ej. "google_id")
+  const [rows] = await pool.query(
+    `SELECT * FROM usuario WHERE ${provider} = ?`,
+    [providerId]
+  );
+  return rows[0] || null;
+};
+
+/**
+ * Vincula una cuenta de proveedor a un usuario existente por correo
+ */
+const linkProviderToUser = async (id_usuario, provider, providerId) => {
+  const [result] = await pool.query(
+    `UPDATE usuario SET ${provider} = ? WHERE id_usuario = ?`,
+    [providerId, id_usuario]
+  );
+  return result.affectedRows > 0;
+};
+
+/**
+ * Crear nuevo usuario social (sin contraseña)
+ */
+const insertSocialUser = async (correo, tipo_usuario, provider, providerId, connection = pool) => {
+  const [result] = await connection.query(
+    `INSERT INTO usuario (correo, tipo_usuario, ${provider}) VALUES (?, ?, ?)`,
+    [correo, tipo_usuario, providerId]
+  );
+  return result.insertId;
+};
+
 module.exports = {
   // Consultas de lectura
   findAllUsersWithRoles,
@@ -195,4 +276,11 @@ module.exports = {
   updateUserEmail,
   updateLastLogin,
   deleteUserById,
+  saveResetToken,
+  findUserByResetToken,
+  updatePasswordAndClearToken,
+
+  findUserByProviderId,
+  linkProviderToUser,
+  insertSocialUser,
 };

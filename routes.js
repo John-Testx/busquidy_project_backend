@@ -11,6 +11,9 @@ const supportRoutes = require("./routes/supportRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const recommendRoutes = require("./routes/recommendRoutes");
 const chatRoutes = require("./routes/chatRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
+const contactRequestRoutes = require("./routes/contactRequestRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
 
 
 router.use("/support", supportRoutes);
@@ -22,6 +25,9 @@ router.use("/payments", paymentRoutes);
 router.use("/admin", adminRoutes);
 router.use("/recommend", recommendRoutes );
 router.use("/chat", chatRoutes );
+router.use("/notifications", notificationRoutes )
+router.use("/contact-requests", contactRequestRoutes );
+router.use("/subscriptions", subscriptionRoutes);
 
 
 

@@ -14,17 +14,52 @@ const {
 const createSubscriptionTransaction = async (req, res) => {
   let connection;
   try {
-    const { amount, buyOrder, sessionId, plan, tipoUsuario, metodoPago, returnUrl: requestReturnUrl } = req.body;
+    const { amount, buyOrder, sessionId, plan, tipoUsuario, metodoPago, returnUrl: requestReturnUrl, isFreePlan } = req.body;
 
     console.log("Received request body:", req.body);
 
-    if (!amount || !buyOrder || !sessionId || !plan || !tipoUsuario || !metodoPago) {
+    // Verificamos que los campos no sean 'null' o 'undefined', pero SÍ permitimos amount = 0
+    if (
+      (amount === null || amount === undefined) ||
+      !buyOrder || 
+      !sessionId || 
+      !plan || 
+      !tipoUsuario || 
+      !metodoPago
+    ) {
       return res.status(400).json({ error: "Datos incompletos o inválidos" });
     }
 
     const returnUrl = requestReturnUrl || `${process.env.FRONTEND_URL || "http://localhost:3000"}/freelancer`;
 
     connection = await pool.getConnection();
+
+    if (isFreePlan && amount <= 0) {
+        console.log("Activando plan gratuito...");
+        
+        // Obtenemos el id_usuario del sessionId
+        const idUsuario = String(sessionId).includes("-") ? sessionId.split("-")[1] : sessionId;
+        
+        // Usamos el servicio de suscripción directamente
+        const subResult = await processSubscriptionPayment(connection, {
+            idUsuario: idUsuario,
+            monto: 0,
+            metodoPago: 'gratuito',
+            token: buyOrder, // Usamos el buyOrder como referencia/token
+            status: 'APPROVED',
+            planRaw: plan, // El ID del plan
+        });
+
+        await connection.commit();
+        
+        // Devolvemos una respuesta exitosa, saltándonos Webpay
+        return res.json({
+            status: "APPROVED",
+            message: "Plan gratuito activado exitosamente",
+            type: "SUBSCRIPTION",
+            ...subResult
+        });
+    }
 
     // Fetch plan from DB
     const planRow = await getPlanById(plan);
@@ -225,6 +260,35 @@ const commitTransaction = async (req, res) => {
       // ✅ Actualizar estado en BD
       await updateWebpayTransactionStatus(token, status, response.response_code);
       await connection.commit();
+      // ✅ AGREGAR NOTIFICACIÓN DE PAGO EXITOSO
+      if (status === 'APPROVED') {
+        const { notificarProyectoPagoExitoso } = require("../../services/notificationService");
+        
+        // Obtener datos del proyecto
+        const [proyectoData] = await connection.query(
+          "SELECT p.titulo, p.id_empresa FROM proyecto p WHERE p.id_proyecto = ?",
+          [idProyecto]
+        );
+        
+        if (proyectoData && proyectoData.length > 0) {
+          const nombreProyecto = proyectoData[0].titulo;
+          
+          // Obtener id_usuario de la empresa
+          const [empresaData] = await connection.query(
+            "SELECT id_usuario FROM empresa WHERE id_empresa = ?",
+            [proyectoData[0].id_empresa]
+          );
+          
+          if (empresaData && empresaData.length > 0) {
+            await notificarProyectoPagoExitoso(
+              empresaData[0].id_usuario,
+              nombreProyecto,
+              idProyecto,
+              connection
+            );
+          }
+        }
+      }
       responseSent = true;
 
       console.log('✅ Pago de proyecto procesado exitosamente');
@@ -261,6 +325,20 @@ const commitTransaction = async (req, res) => {
 
       await updateWebpayTransactionStatus(token, status, response.response_code);
       await connection.commit();
+      // ✅ AGREGAR NOTIFICACIÓN DE SUSCRIPCIÓN
+      if (status === 'APPROVED') {
+        const { notificarSuscripcionExitosa } = require("../../services/notificationService");
+        const { getPlanById } = require("../../queries/payment/planQueries");
+        
+        const planData = await getPlanById(planRaw);
+        if (planData) {
+          await notificarSuscripcionExitosa(
+            idUsuario,
+            planData.nombre,
+            connection
+          );
+        }
+      }
       responseSent = true;
 
       return res.json({
@@ -336,8 +414,29 @@ const commitTransaction = async (req, res) => {
   }
 };
 
+/**
+ * Obtener transacciones del usuario logueado
+ */
+const getMyTransactions = async (req, res) => {
+  const userId = req.user.id_usuario;
+  const userRole = req.user.tipo_usuario;
+
+  try {
+    const { fetchTransactionsByUserId } = require("../../queries/payment/transactionQueries");
+    const transactions = await fetchTransactionsByUserId(userId, userRole);
+    res.json(transactions);
+  } catch (error) {
+    console.error("Error al obtener transacciones:", error);
+    res.status(500).json({ 
+      error: "Error al obtener transacciones", 
+      message: error.message 
+    });
+  }
+};
+
 module.exports = {
   createSubscriptionTransaction,
   createProjectTransaction,
   commitTransaction,
+  getMyTransactions,
 };

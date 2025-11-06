@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { verifyToken } = require("../middlewares/auth");
+const { verifyToken, optionalAuth } = require("../middlewares/auth");
 
 // Importar controladores
 const {
@@ -22,7 +22,10 @@ const {
 // Importar controlador de postulaciones
 const {
   getPostulationsByProjectId,
-  getPostulationsByPublicationId
+  getPostulationsByPublicationId,
+  checkIfUserAppliedToPublication,
+  createPostulation,
+  hireFreelancer,
 } = require("../controllers/project/postulationController");
 
 // ============= RUTAS DE PROYECTOS =============
@@ -41,8 +44,15 @@ router.put("/update-proyecto-state/:id_proyecto", updateProjectState);
 router.put("/api/proyecto/estado/:id_proyecto", updateProjectStatus);
 router.get("/publicacion", getAllPublications);
 
-// ============= RUTAS DE POSTULACIONES (NUEVO) =============
+// ============= RUTAS DE POSTULACIONES =============
 router.get("/:id_proyecto/postulaciones", getPostulationsByProjectId);
 router.get("/publicacion/:id_publicacion/postulaciones", getPostulationsByPublicationId);
+router.post('/postulations/:id_postulacion/hire', verifyToken, hireFreelancer);
+
+// Nueva ruta para verificar si el usuario ya postuló (requiere autenticación)
+router.get("/publicacion/:id_publicacion/check-application", optionalAuth, checkIfUserAppliedToPublication);
+
+// Nueva ruta para crear postulación (requiere autenticación)
+router.post("/publicacion/:id_publicacion/postular", verifyToken, createPostulation);
 
 module.exports = router;

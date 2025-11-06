@@ -440,6 +440,55 @@ const guardarPerfilEnDB = async (data) => {
   }
 };
 
+/**
+ * Actualizar foto de perfil
+ */
+const updateProfilePhoto = async (id_freelancer, photo_url) => {
+  const [result] = await pool.query(
+    "UPDATE freelancer SET photo_url = ? WHERE id_freelancer = ?",
+    [photo_url, id_freelancer]
+  );
+  return result.affectedRows > 0;
+};
+
+/**
+ * Obtener preferencias del freelancer
+ */
+const getPreferencias = async (id_freelancer) => {
+  const [rows] = await pool.query(
+    "SELECT ofertas_empleo, practicas, trabajo_estudiantes FROM freelancer WHERE id_freelancer = ?",
+    [id_freelancer]
+  );
+  
+  if (rows.length === 0) {
+    return { ofertas_empleo: true, practicas: true, trabajo_estudiantes: true };
+  }
+  
+  return {
+    ofertas_empleo: rows[0].ofertas_empleo === 1,
+    practicas: rows[0].practicas === 1,
+    trabajo_estudiantes: rows[0].trabajo_estudiantes === 1
+  };
+};
+
+/**
+ * Actualizar preferencias del freelancer
+ */
+const updatePreferencias = async (id_freelancer, preferencias) => {
+  const [result] = await pool.query(
+    `UPDATE freelancer 
+     SET ofertas_empleo = ?, practicas = ?, trabajo_estudiantes = ? 
+     WHERE id_freelancer = ?`,
+    [
+      preferencias.ofertas_empleo,
+      preferencias.practicas,
+      preferencias.trabajo_estudiantes,
+      id_freelancer
+    ]
+  );
+  return result.affectedRows > 0;
+};
+
 module.exports = {
   // Consultas básicas
   findFreelancerByUserId,
@@ -472,5 +521,9 @@ module.exports = {
   insertPretensiones,
   
   // Legacy
-  guardarPerfilEnDB, // Para compatibilidad con código antiguo
+  guardarPerfilEnDB,
+
+  updateProfilePhoto,
+  getPreferencias,
+  updatePreferencias
 };

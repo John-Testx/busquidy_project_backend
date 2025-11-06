@@ -9,14 +9,20 @@ const getAllPlanes = async (req, res) => {
 
     const rows = await getPlanes(tipo_usuario);
 
-    // Parse JSON if 'beneficios' is stored as JSON string
+    // Parse JSON beneficios si está como string
     const formattedPlans = rows.map(plan => ({
       ...plan,
       beneficios: (() => {
         try {
+          // Si ya es un objeto/array, devolverlo tal cual
+          if (typeof plan.beneficios === 'object') {
+            return plan.beneficios;
+          }
+          // Si es string, parsearlo
           return JSON.parse(plan.beneficios);
         } catch {
-          return plan.beneficios ? plan.beneficios.split(",") : [];
+          // Fallback: intentar split por comas
+          return plan.beneficios ? plan.beneficios.split(",").map(b => b.trim()) : [];
         }
       })()
     }));

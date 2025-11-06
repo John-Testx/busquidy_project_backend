@@ -1,9 +1,19 @@
 const projectQueries = require("../../queries/project/projectQueries");
 const publicationQueries = require("../../queries/project/publicationQueries");
 const { getEmpresaByUserId } = require("../../queries/empresa/empresaQueries.js");
-
 const {getUserById} = require("../../queries/user/userQueries");
 const pool = require("../../db");
+
+const { 
+    notificarPostulacionRecibida, 
+    notificarNuevaPostulacion,
+    notificarPostulacionAceptada,
+    notificarPostulacionRechazada
+} = require("../../services/notificationService");
+const { getPostulacionData } = require("../../queries/notification/notificationHelperQueries");
+// ✅ --- NUEVO IMPORT DEL GUARDIÁN ---
+const { checkUsageLimit } = require("../../services/subscriptionService");
+
 
 /**
  * Controlador de gestión de proyectos
@@ -94,10 +104,31 @@ const createProject = async (req, res) => {
     }
 
     const tipo_usuario = userCheckResults[0].tipo_usuario;
-    if (tipo_usuario !== "empresa") {
-      await connection.rollback();
-      return res.status(403).json({ error: "Acceso no autorizado" });
+    
+    let tipo_publicacion;
+    if (tipo_usuario === "empresa_juridico") {
+        tipo_publicacion = "proyecto";
+    } else if (tipo_usuario === "empresa_natural") {
+        tipo_publicacion = "tarea";
+    } else {
+        await connection.rollback();
+        return res.status(403).json({ error: "Acceso no autorizado: Tipo de usuario no puede publicar." });
     }
+
+    // Asignamos el tipo correcto a los datos del proyecto
+    projectData.tipo = tipo_publicacion;
+
+    
+    // ✅ ===== GUARDIÁN DE LÍMITES (PUBLICACIÓN) =====
+    // Usamos la variable 'tipo_publicacion' que acabamos de definir
+    const tipo_accion_publicar = (tipo_publicacion === 'proyecto') ? 'publicacion_proyecto' : 'publicacion_tarea';
+    const puedePublicar = await checkUsageLimit(id_usuario, tipo_accion_publicar, connection);
+
+    if (!puedePublicar) {
+        await connection.rollback();
+        return res.status(403).json({ message: 'Has alcanzado el límite de publicaciones para tu plan.' });
+    }
+    // ✅ ===== FIN DEL GUARDIÁN =====
 
     // Obtener `id_empresa`
     const empresaResults = await getEmpresaByUserId(id_usuario);
@@ -124,14 +155,18 @@ const createProject = async (req, res) => {
 
     await connection.commit();
     console.log("Proyecto y publicación creados con éxito");
+    const newProjectData = await projectQueries.findProjectById(id_proyecto);
+    
     res.status(200).json({
       message: "Proyecto y publicación creados con éxito",
-      projectId: id_proyecto,
+      // projectId: id_proyecto, // Puedes mantenerlo si quieres
+      newProject: newProjectData // Devolvemos el proyecto/tarea creado
     });
   } catch (err) {
     console.error("Error al crear el proyecto:", err);
     if (connection) await connection.rollback();
-    res.status(500).json({ error: "Error interno del servidor" });
+    // Devuelve el mensaje de error del guardián si existe
+    res.status(err.message.includes("límite") ? 403 : 500).json({ error: err.message || "Error interno del servidor" });
   } finally {
     if (connection) await connection.release();
   }
@@ -207,10 +242,12 @@ const getProjectsByUser = async (req, res) => {
     }
 
     const tipo_usuario = userCheckResults[0].tipo_usuario;
-    if (tipo_usuario !== "empresa") {
+    
+    // (Lógica de Tipo de Usuario - OK)
+    if (tipo_usuario !== "empresa_juridico" && tipo_usuario !== "empresa_natural") {
       return res.status(403).json({ error: "Acceso no autorizado" });
     }
-
+    
     // Obtener `id_empresa`
     const empresaResults = await getEmpresaByUserId(id_usuario);
     if (empresaResults.length === 0) {
@@ -347,13 +384,6 @@ const releaseProjectPayment = async (req, res) => {
 
     console.log('✅ Estado del proyecto actualizado a finalizado');
 
-    // 7. (Opcional) Habilitar reseñas
-    // Si tienes una columna para esto en tu base de datos, descomenta:
-    // await connection.query(
-    //   `UPDATE proyecto SET resena_habilitada = 1 WHERE id_proyecto = ?`,
-    //   [id_proyecto]
-    // );
-
     await connection.commit();
     console.log('✅ Transacción completada exitosamente');
 
@@ -379,6 +409,274 @@ const releaseProjectPayment = async (req, res) => {
   }
 };
 
+/**
+ * Controlador de postulaciones
+ */
+
+// ✅ NUEVA FUNCIÓN: Crear postulación
+const crearPostulacion = async (req, res) => {
+  const { id_publicacion } = req.body;
+  const { id: id_usuario } = req.user; // Usuario freelancer autenticado (ID viene de req.user.id)
+  
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Obtener id_freelancer del usuario
+    const [freelancer] = await connection.query(
+      "SELECT id_freelancer FROM freelancer WHERE id_usuario = ?",
+      [id_usuario]
+    );
+
+    if (!freelancer || freelancer.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: "Freelancer no encontrado" });
+    }
+
+    const id_freelancer = freelancer[0].id_freelancer;
+
+    
+    // ✅ ===== GUARDIÁN DE LÍMITES (POSTULACIÓN) =====
+    // 1. Averiguar el tipo de publicación
+    const [pubTipo] = await connection.query(
+        "SELECT p.tipo FROM proyecto p JOIN publicacion_proyecto pp ON p.id_proyecto = pp.id_proyecto WHERE pp.id_publicacion = ?",
+        [id_publicacion]
+    );
+
+    if (!pubTipo || pubTipo.length === 0) {
+         await connection.rollback();
+         return res.status(404).json({ error: "Publicación no encontrada" });
+    }
+
+    // 2. Comprobar el límite
+    const tipo_accion_postular = (pubTipo[0].tipo === 'proyecto') ? 'postulacion_proyecto' : 'postulacion_tarea';
+    // (Usamos id_usuario, no id_freelancer, para el check)
+    const puedePostular = await checkUsageLimit(id_usuario, tipo_accion_postular, connection); 
+
+    if (!puedePostular) {
+        await connection.rollback();
+        return res.status(403).json({ message: 'Has alcanzado el límite de postulaciones para tu plan.' });
+    }
+    // ✅ ===== FIN DEL GUARDIÁN =====
+
+
+    // Verificar que no haya postulado antes
+    const [existente] = await connection.query(
+      "SELECT id_postulacion FROM postulacion WHERE id_publicacion = ? AND id_freelancer = ?",
+      [id_publicacion, id_freelancer]
+    );
+
+    if (existente && existente.length > 0) {
+      await connection.rollback();
+      return res.status(409).json({ error: "Ya has postulado a este proyecto" });
+    }
+
+    // Insertar postulación
+    const [result] = await connection.query(
+      `INSERT INTO postulacion (id_publicacion, id_freelancer, estado_postulacion) 
+       VALUES (?, ?, 'pendiente')`,
+      [id_publicacion, id_freelancer]
+    );
+
+    const id_postulacion = result.insertId;
+
+    // (Lógica de Notificaciones - OK)
+    const [proyecto] = await connection.query(
+      `SELECT p.titulo as nombre_proyecto, p.id_empresa, e.id_usuario as id_usuario_empresa
+       FROM publicacion_proyecto pp
+       INNER JOIN proyecto p ON pp.id_proyecto = p.id_proyecto
+       INNER JOIN empresa e ON p.id_empresa = e.id_empresa
+       WHERE pp.id_publicacion = ?`,
+      [id_publicacion]
+    );
+
+    if (proyecto && proyecto.length > 0) {
+      const nombreProyecto = proyecto[0].nombre_proyecto;
+      const idUsuarioEmpresa = proyecto[0].id_usuario_empresa;
+
+      const [freelancerData] = await connection.query(
+        `SELECT CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_completo
+         FROM antecedentes_personales ap
+         WHERE ap.id_freelancer = ?`,
+        [id_freelancer]
+      );
+
+      const nombreFreelancer = freelancerData[0]?.nombre_completo || "Freelancer";
+
+      await notificarPostulacionRecibida(
+        id_usuario,
+        nombreProyecto,
+        id_publicacion,
+        connection
+      );
+
+      await notificarNuevaPostulacion(
+        idUsuarioEmpresa,
+        nombreFreelancer,
+        nombreProyecto,
+        id_postulacion,
+        connection
+      );
+    }
+
+    await connection.commit();
+    res.status(201).json({ 
+      message: "Postulación creada exitosamente",
+      id_postulacion 
+    });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Error al crear postulación:", error);
+    // Devuelve el mensaje de error del guardián si existe
+    res.status(error.message.includes("límite") ? 403 : 500).json({ error: error.message || "Error al crear la postulación" });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+// ✅ NUEVA FUNCIÓN: Aceptar postulación
+const aceptarPostulacion = async (req, res) => {
+  const { id_postulacion } = req.params;
+  
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Actualizar estado de la postulación
+    await connection.query(
+      "UPDATE postulacion SET estado_postulacion = 'aceptada' WHERE id_postulacion = ?",
+      [id_postulacion]
+    );
+
+    // OBTENER DATOS PARA NOTIFICACIÓN
+    const postulacionData = await getPostulacionData(id_postulacion);
+
+    if (postulacionData) {
+      // (Import corregido al inicio del archivo)
+      await notificarPostulacionAceptada(
+        postulacionData.id_usuario_freelancer,
+        postulacionData.nombre_proyecto,
+        postulacionData.id_publicacion,
+        connection
+      );
+    }
+
+    await connection.commit();
+    res.json({ message: "Postulación aceptada exitosamente" });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Error al aceptar postulación:", error);
+    res.status(500).json({ error: "Error al aceptar la postulación" });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+// ✅ NUEVA FUNCIÓN: Rechazar postulación
+const rechazarPostulacion = async (req, res) => {
+  const { id_postulacion } = req.params;
+  
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Actualizar estado de la postulación
+    await connection.query(
+      "UPDATE postulacion SET estado_postulacion = 'rechazada' WHERE id_postulacion = ?",
+      [id_postulacion]
+    );
+
+    // OBTENER DATOS PARA NOTIFICACIÓN
+    const postulacionData = await getPostulacionData(id_postulacion);
+
+    if (postulacionData) {
+      // (Import corregido al inicio del archivo)
+      await notificarPostulacionRechazada(
+        postulacionData.id_usuario_freelancer,
+        postulacionData.nombre_proyecto,
+        connection
+      );
+    }
+
+    await connection.commit();
+    res.json({ message: "Postulación rechazada" });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Error al rechazar postulación:", error);
+    res.status(500).json({ error: "Error al rechazar la postulación" });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+// Obtener postulaciones por ID de proyecto (YA EXISTENTE)
+const getPostulationsByProjectId = async (req, res) => {
+  const { id_proyecto } = req.params;
+
+  try {
+    const postulations = await postulationQueries.findPostulationsByProjectId(id_proyecto);
+    
+    const formattedPostulations = postulations.map(post => ({
+      id_postulacion: post.id_postulacion,
+      id_usuario: post.id_usuario,
+      nombre: `${post.nombres || ''} ${post.apellidos || ''}`.trim() || 'Nombre no disponible',
+      titulo_profesional: post.titulo_profesional || post.ultimo_cargo || 'Sin título especificado',
+      biografia: post.ultima_empresa ? `Última experiencia en ${post.ultima_empresa}` : '',
+      tarifa_hora: post.renta_esperada || 0,
+      experiencia_anios: 0,
+      correo: post.correo_contacto || '',
+      telefono: post.telefono_contacto || '',
+      fecha_postulacion: post.fecha_postulacion,
+      estado_postulacion: post.estado_postulacion
+    }));
+
+    res.json(formattedPostulations);
+  } catch (error) {
+    console.error("Error al obtener postulaciones:", error);
+    res.status(500).json({ 
+      error: "Error al obtener postulaciones",
+      mensaje: error.message 
+    });
+  }
+};
+
+// Obtener postulaciones por ID de publicación (YA EXISTENTE)
+const getPostulationsByPublicationId = async (req, res) => {
+  const { id_publicacion } = req.params;
+
+  try {
+    const postulations = await postulationQueries.findPostulationsByPublicationId(id_publicacion);
+    
+    const formattedPostulations = postulations.map(post => ({
+      id_postulacion: post.id_postulacion,
+      id_usuario: post.id_usuario,
+      nombre: `${post.nombres || ''} ${post.apellidos || ''}`.trim() || 'Nombre no disponible',
+      titulo_profesional: post.titulo_profesional || post.ultimo_cargo || 'Sin título especificado',
+      biografia: post.ultima_empresa ? `Última experiencia en ${post.ultima_empresa}` : '',
+      tarifa_hora: post.renta_esperada || 0,
+      experiencia_anios: 0,
+      correo: post.correo_contacto || '',
+      telefono: post.telefono_contacto || '',
+      fecha_postulacion: post.fecha_postulacion,
+      estado_postulacion: post.estado_postulacion
+    }));
+
+    res.json(formattedPostulations);
+  } catch (error) {
+    console.error("Error al obtener postulaciones:", error);
+    res.status(500).json({ 
+      error: "Error al obtener postulaciones",
+      mensaje: error.message 
+    });
+  }
+};
+
 module.exports = {
   getAllProjects,
   getProjectById,
@@ -386,5 +684,10 @@ module.exports = {
   createProject,
   deleteProject,
   getProjectsByUser,
-  releaseProjectPayment  
+  releaseProjectPayment,
+  crearPostulacion,       
+  aceptarPostulacion,       
+  rechazarPostulacion,  
+  getPostulationsByProjectId,
+  getPostulationsByPublicationId
 };

@@ -1,3 +1,5 @@
+const pool = require("../../db");
+
 // Uses '?' for MySQL parameter binding
 const getAvailabilityByFreelancerId = "SELECT * FROM disponibilidad_freelancer WHERE id_freelancer = ? ORDER BY dia_semana, hora_inicio";
 

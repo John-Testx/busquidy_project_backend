@@ -80,7 +80,6 @@ const addAvailability = async (req, res) => {
 };
 
 // Eliminar un bloque de disponibilidad
-// Eliminar un bloque de disponibilidad
 const deleteAvailability = async (req, res) => {
     
     // Obtener el ID de forma consistente
@@ -117,8 +116,28 @@ const deleteAvailability = async (req, res) => {
     }
 };
 
+// ✅ NUEVO ENDPOINT: Obtener disponibilidad de un freelancer específico (para empresas)
+const getAvailabilityByFreelancerId = async (req, res) => {
+    const { id_freelancer } = req.params;
+
+    try {
+        const availability = await pool.query(
+            availabilityQueries.getAvailabilityByFreelancerId,
+            [id_freelancer]
+        );
+        
+        console.log("Disponibilidad del freelancer:", availability);
+        res.status(200).json(availability[0]);
+
+    } catch (error) {
+        console.error('Error al obtener la disponibilidad:', error);
+        res.status(500).json({ message: "Error interno del servidor." });
+    }
+};
+
 module.exports = {
     getAvailability,
     addAvailability,
     deleteAvailability,
+    getAvailabilityByFreelancerId,
 };

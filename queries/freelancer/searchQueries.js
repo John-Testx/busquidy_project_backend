@@ -124,9 +124,42 @@ const getPublicProfileData = async (id_freelancer) => {
   };
 };
 
+const findFreelancersByIds = async (ids) => {
+  if (!ids || ids.length === 0) {
+    return [];
+  }
+
+  // Usamos la misma consulta de getAllFreelancers pero con un filtro WHERE IN
+  // Esto nos da un perfil público consistente
+  const query = `
+    SELECT 
+      f.id_freelancer AS id_freelancer,
+      f.id_usuario,
+      ap.nombres AS nombres,
+      ap.apellidos AS apellidos,
+      ap.nacionalidad AS nacionalidad,
+      ap.ciudad AS ciudad,
+      ap.comuna AS comuna,
+      f.correo_contacto AS correo_contacto,
+      f.telefono_contacto AS telefono_contacto,
+      f.calificacion_promedio AS calificacion_promedio,
+      f.descripcion AS descripcion
+    FROM freelancer AS f
+    LEFT JOIN antecedentes_personales AS ap ON f.id_freelancer = ap.id_freelancer
+    WHERE f.id_freelancer IN (?)
+  `;
+  
+  // pool.query puede manejar el array de IDs directamente
+  const [freelancers] = await pool.query(query, [ids]);
+  return freelancers;
+};
+
+
+
 module.exports = {
   getAllFreelancers,
   getFreelancerById,
   getFreelancerByUserId,
-  getPublicProfileData
+  getPublicProfileData,
+  findFreelancersByIds
 };

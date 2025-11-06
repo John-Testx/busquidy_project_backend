@@ -162,6 +162,16 @@ const enviarMensaje = async (req, res) => {
       remitente
     );
 
+    // ✅ AGREGAR NOTIFICACIÓN DE RESPUESTA DE SOPORTE
+    if (remitente === "administrador") {
+      const { notificarTicketSoporteRespondido } = require("../../services/notificationService");
+      await notificarTicketSoporteRespondido(
+        ticket.id_usuario,
+        id_ticket,
+        null
+      );
+    }
+
     // Si el admin responde y el ticket está pendiente, cambiar a "en proceso"
     if (remitente === "administrador" && ticket.estado === 'pendiente') {
       await ticketQueries.updateTicketStatus(id_ticket, 'en proceso');

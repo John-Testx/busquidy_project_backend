@@ -11,5 +11,6 @@ router.get('/conversations', chatController.getConversations);
 router.get('/messages/:conversationId', chatController.getMessages);
 router.post('/conversations', chatController.createConversation);
 router.get('/users', chatController.getUsersForChat);
+router.get('/conversation/:conversationId', chatController.getConversationById);
 
 module.exports = router;

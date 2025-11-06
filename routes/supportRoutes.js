@@ -8,7 +8,9 @@ const {
   obtenerTicketsPorEmail,
   obtenerTicketPublico,
   obtenerMensajesPublico,
-  enviarMensajePublico
+  enviarMensajePublico,
+  enviarCodigoSoporte,    
+  verificarCodigoSoporte  
 } = require("../controllers/support/publicTicketController");
 
 const {
@@ -27,6 +29,8 @@ router.get("/publico/email", obtenerTicketsPorEmail);
 router.get("/publico/:id_ticket", obtenerTicketPublico);
 router.get("/publico/:id_ticket/mensajes", obtenerMensajesPublico);
 router.post("/publico/:id_ticket/mensajes", enviarMensajePublico);
+router.post("/publico/enviar-codigo", enviarCodigoSoporte);
+router.post("/publico/verificar-codigo", verificarCodigoSoporte);
 
 // ============= RUTAS AUTENTICADAS (token requerido) =============
 router.post("/", verifyToken, crearTicket);

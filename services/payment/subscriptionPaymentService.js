@@ -1,5 +1,5 @@
 const { insertPago, insertPagoDetalleSuscripcion } = require("../../queries/payment/transactionQueries");
-const { hasActiveSuscripcion, insertSuscripcion } = require("../../queries/payment/subscriptionQueries");
+const { hasActiveSuscripcion, insertSuscripcion, cancelSubscriptionById } = require("../../queries/payment/subscriptionQueries");
 const { getPlanById } = require("../../queries/payment/planQueries");
 const {getUserById} = require("../../queries/user/userQueries");
 
@@ -75,16 +75,24 @@ const processSubscriptionPayment = async (connection, { idUsuario, monto, metodo
       const tipo_usuario = userCheckResults[0].tipo_usuario;
 
       if (tipo_usuario === "freelancer") {
+        
         await connection.query(
           `UPDATE freelancer SET premium = 1 WHERE id_usuario = ?`,
           [idUsuario]
         );
-      } else if (tipo_usuario === "empresa") {
+      
+      // ===== INICIO DE LA CORRECCIÓN =====
+      // Comprobamos si el tipo de usuario es CUALQUIERA de los tipos de empresa
+      } else if (tipo_usuario === "empresa_juridico" || tipo_usuario === "empresa_natural") {
+      // ===== FIN DE LA CORRECCIÓN =====
+
         await connection.query(
           `UPDATE empresa SET premium = 1 WHERE id_usuario = ?`,
           [idUsuario]
         );
+        
       } else {
+        // Ahora esto solo fallará si es un tipo realmente inválido (ej. 'administrador')
         throw { code: "INVALID_USER_TYPE", message: "Tipo de usuario inválido" };
       }
     }

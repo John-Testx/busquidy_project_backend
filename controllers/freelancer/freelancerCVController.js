@@ -1,4 +1,5 @@
 const fs = require("fs");
+const PDFDocument = require('pdfkit');
 const { getFreelancerByUserId } = require("../../queries/freelancer/profileQueries");
 const { parseCV } = require("../../services/cvService");
 const profileQueries = require("../../queries/freelancer/profileQueries");
@@ -183,7 +184,173 @@ const getCVUrl = async (req, res) => {
   }
 };
 
+
+/**
+ * Descargar CV en formato Busquidy (PDF)
+ */
+const downloadBusquidyCV = async (req, res) => {
+  const { id_usuario } = req.params;
+
+  try {
+    // Obtener id_freelancer
+    const freelancerResults = await getFreelancerByUserId(id_usuario);
+    if (freelancerResults.length === 0) {
+      return res.status(404).json({ error: "Freelancer no encontrado" });
+    }
+
+    const id_freelancer = freelancerResults[0].id_freelancer;
+
+    // Obtener datos completos del perfil
+    const profileData = await profileQueries.getCompleteProfileData(id_freelancer);
+    const freelancerInfo = freelancerResults[0];
+
+    // Crear PDF
+    const doc = new PDFDocument({ margin: 50 });
+
+    // Headers para descarga
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=CV_Busquidy_${freelancerInfo.id_freelancer}.pdf`);
+
+    // Pipe el PDF al response
+    doc.pipe(res);
+
+    // ===== HEADER DEL CV =====
+    doc.fontSize(24).fillColor('#07767c').text('CURRÍCULUM VITAE', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).fillColor('#666666').text('Generado por Busquidy', { align: 'center' });
+    doc.moveDown(1);
+
+    // ===== INFORMACIÓN PERSONAL =====
+    const personal = profileData.antecedentesPersonales || {};
+    doc.fontSize(16).fillColor('#07767c').text('INFORMACIÓN PERSONAL');
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke('#07767c');
+    doc.moveDown(0.5);
+
+    doc.fontSize(11).fillColor('#000000');
+    addField(doc, 'Nombre Completo', `${personal.nombres || ''} ${personal.apellidos || ''}`);
+    addField(doc, 'Correo', freelancerInfo.correo_contacto || 'No especificado');
+    addField(doc, 'Teléfono', freelancerInfo.telefono_contacto || 'No especificado');
+    addField(doc, 'Fecha de Nacimiento', personal.fecha_nacimiento || 'No especificada');
+    addField(doc, 'RUT', personal.identificacion || 'No especificado');
+    addField(doc, 'Nacionalidad', personal.nacionalidad || 'No especificada');
+    addField(doc, 'Ubicación', `${personal.ciudad || ''}, ${personal.region || ''}`);
+    if (freelancerInfo.linkedin_link) {
+      addField(doc, 'LinkedIn', freelancerInfo.linkedin_link);
+    }
+    doc.moveDown(1);
+
+    // ===== PRESENTACIÓN =====
+    if (freelancerInfo.descripcion) {
+      doc.fontSize(16).fillColor('#07767c').text('PRESENTACIÓN');
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke('#07767c');
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor('#000000').text(freelancerInfo.descripcion, { align: 'justify' });
+      doc.moveDown(1);
+    }
+
+    // ===== EXPERIENCIA LABORAL =====
+    const experiencias = profileData.trabajoPractica || [];
+    if (experiencias.length > 0) {
+      doc.fontSize(16).fillColor('#07767c').text('EXPERIENCIA LABORAL');
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke('#07767c');
+      doc.moveDown(0.5);
+
+      experiencias.forEach((exp, index) => {
+        doc.fontSize(12).fillColor('#000000').text(`${exp.cargo || 'Cargo no especificado'} - ${exp.empresa || 'Empresa no especificada'}`, { bold: true });
+        doc.fontSize(10).fillColor('#666666').text(`${exp.mes_inicio || ''} ${exp.ano_inicio || ''}`);
+        if (exp.descripcion) {
+          doc.fontSize(10).fillColor('#000000').text(exp.descripcion, { align: 'justify' });
+        }
+        if (index < experiencias.length - 1) doc.moveDown(0.5);
+      });
+      doc.moveDown(1);
+    }
+
+    // ===== EDUCACIÓN =====
+    const educacionSup = profileData.educacionSuperior || [];
+    if (educacionSup.length > 0) {
+      doc.fontSize(16).fillColor('#07767c').text('EDUCACIÓN SUPERIOR');
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke('#07767c');
+      doc.moveDown(0.5);
+
+      educacionSup.forEach((edu, index) => {
+        doc.fontSize(12).fillColor('#000000').text(`${edu.carrera || 'Carrera no especificada'}`, { bold: true });
+        doc.fontSize(10).fillColor('#666666').text(`${edu.institucion || 'Institución no especificada'} (${edu.estado || ''})`);
+        doc.fontSize(10).fillColor('#000000').text(`${edu.ano_inicio || ''} - ${edu.ano_termino || ''}`);
+        if (index < educacionSup.length - 1) doc.moveDown(0.5);
+      });
+      doc.moveDown(1);
+    }
+
+    // ===== HABILIDADES =====
+    const habilidades = profileData.habilidades || [];
+    if (habilidades.length > 0) {
+      doc.fontSize(16).fillColor('#07767c').text('HABILIDADES');
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke('#07767c');
+      doc.moveDown(0.5);
+
+      habilidades.forEach((hab, index) => {
+        doc.fontSize(10).fillColor('#000000').text(`• ${hab.habilidad} - ${hab.categoria} (${hab.nivel})`);
+      });
+      doc.moveDown(1);
+    }
+
+    // ===== IDIOMAS =====
+    const idiomas = profileData.idiomas || [];
+    if (idiomas.length > 0) {
+      doc.fontSize(16).fillColor('#07767c').text('IDIOMAS');
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke('#07767c');
+      doc.moveDown(0.5);
+
+      idiomas.forEach((idioma) => {
+        doc.fontSize(10).fillColor('#000000').text(`• ${idioma.idioma} - ${idioma.nivel}`);
+      });
+      doc.moveDown(1);
+    }
+
+    // ===== CURSOS Y CERTIFICACIONES =====
+    const cursos = profileData.curso || [];
+    if (cursos.length > 0) {
+      doc.fontSize(16).fillColor('#07767c').text('CURSOS Y CERTIFICACIONES');
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke('#07767c');
+      doc.moveDown(0.5);
+
+      cursos.forEach((curso) => {
+        doc.fontSize(10).fillColor('#000000').text(`• ${curso.nombre_curso} - ${curso.institucion} (${curso.mes_inicio} ${curso.ano_inicio})`);
+      });
+      doc.moveDown(1);
+    }
+
+    // ===== FOOTER =====
+    doc.moveDown(2);
+    doc.fontSize(8).fillColor('#999999').text(
+      'Este documento fue generado automáticamente por Busquidy',
+      { align: 'center' }
+    );
+    doc.text(
+      `Fecha de generación: ${new Date().toLocaleDateString('es-CL')}`,
+      { align: 'center' }
+    );
+
+    // Finalizar PDF
+    doc.end();
+
+  } catch (error) {
+    console.error("Error al generar CV Busquidy:", error);
+    res.status(500).json({ error: "Error al generar el CV", details: error.message });
+  }
+};
+
+/**
+ * Helper para agregar campos al PDF
+ */
+function addField(doc, label, value) {
+  doc.fontSize(10).fillColor('#666666').text(`${label}: `, { continued: true })
+     .fillColor('#000000').text(value || 'No especificado');
+}
+
 module.exports = {
   uploadCV,
   getCVUrl,
+  downloadBusquidyCV,
 };
