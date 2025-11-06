@@ -257,6 +257,69 @@ const insertSocialUser = async (correo, tipo_usuario, provider, providerId, conn
   return result.insertId;
 };
 
+/**
+ * Guarda el token de verificación de email para subida de documentos
+ * @param {number} id_usuario - ID del usuario
+ * @param {string} hashedToken - Token hasheado
+ * @param {Date} expiresAt - Fecha de expiración
+ */
+const saveVerificationToken = async (id_usuario, hashedToken, expiresAt) => {
+  const query = `
+    UPDATE usuario 
+    SET verification_token = ?, verification_token_expires = ?
+    WHERE id_usuario = ?
+  `;
+  const [result] = await pool.query(query, [hashedToken, expiresAt, id_usuario]);
+  return result;
+};
+
+/**
+ * Busca un usuario por su token de verificación
+ * @param {string} hashedToken - Token hasheado
+ * @returns {Promise<Object|null>} Usuario encontrado o null
+ */
+const findUserByVerificationToken = async (hashedToken) => {
+  const query = `
+    SELECT id_usuario, correo, tipo_usuario, verification_token_expires 
+    FROM usuario 
+    WHERE verification_token = ? AND verification_token_expires > NOW()
+  `;
+  const [result] = await pool.query(query, [hashedToken]);
+  return result[0] || null;
+};
+
+/**
+ * Actualiza el estado de verificación del usuario
+ * @param {number} id_usuario - ID del usuario
+ * @param {string} estado - Estado de verificación ('no_verificado', 'en_revision', 'verificado', 'rechazado')
+ */
+const updateVerificationStatus = async (id_usuario, estado) => {
+  const query = `
+    UPDATE usuario 
+    SET estado_verificacion = ?
+    WHERE id_usuario = ?
+  `;
+  const [result] = await pool.query(query, [estado, id_usuario]);
+  return result.affectedRows > 0;
+};
+
+/**
+ * Marca el usuario como verificado y activa la cuenta
+ * @param {number} id_usuario - ID del usuario
+ */
+const markUserAsVerified = async (id_usuario) => {
+  const query = `
+    UPDATE usuario 
+    SET estado_verificacion = 'verificado', 
+        is_active = TRUE,
+        verification_token = NULL, 
+        verification_token_expires = NULL
+    WHERE id_usuario = ?
+  `;
+  const [result] = await pool.query(query, [id_usuario]);
+  return result;
+};
+
 module.exports = {
   // Consultas de lectura
   findAllUsersWithRoles,
@@ -283,4 +346,9 @@ module.exports = {
   findUserByProviderId,
   linkProviderToUser,
   insertSocialUser,
+
+  saveVerificationToken,
+  findUserByVerificationToken,
+  updateVerificationStatus,
+  markUserAsVerified,
 };

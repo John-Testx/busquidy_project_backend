@@ -22,7 +22,14 @@ const {
 const {
   getDisputedProjects,
   refundProjectPayment
-} = require("../controllers/admin/disputeController"); // <- NUEVO
+} = require("../controllers/admin/disputeController");
+
+const {
+  getPendingVerifications,
+  getUserVerificationDetails,
+  approveUser,
+  rejectUser,
+} = require("../controllers/admin/adminVerificationController");
 
 // ============= RUTAS DE PERMISOS =============
 router.get("/permissions/:userId", getAdminPermissions);
@@ -40,5 +47,11 @@ router.patch("/:id/roles", updateAdminRoles);
 // ============= RUTAS DE DISPUTAS Y REEMBOLSOS (NUEVO) =============
 router.get("/disputes/projects", verifyToken, getDisputedProjects);
 router.post("/disputes/refund/:id_proyecto", verifyToken, refundProjectPayment);
+
+// (Añadir al router de admin, protegido por admin auth)
+router.get('/verificaciones/pendientes', getPendingVerifications);
+router.get('/verificaciones/usuario/:id', getUserVerificationDetails);
+router.post('/verificaciones/aprobar', approveUser);
+router.post('/verificaciones/rechazar', rejectUser);
 
 module.exports = router;
