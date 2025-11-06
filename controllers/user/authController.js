@@ -29,6 +29,15 @@ const sendVerificationCode = async (req, res) => {
     // ✅ Usar el servicio centralizado
     await redisService.set(`verification:${correo}`, code, 600); // 10 min
 
+    // Logging del código de acceso en entorno de desarrollo
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`===== DEV LOGIN CODE =====`);
+      console.log(`Email: ${correo}`);
+      console.log(`Code: ${code}`);
+      console.log(`==========================`);
+    }
+
+
     const subject = 'Código de verificación - Busquidy';
     const text = `Tu código de verificación es: ${code}\n\nEste código expira en 10 minutos.`;
     const html = `
