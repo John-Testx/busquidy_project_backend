@@ -26,7 +26,7 @@ const getPostulationsByProjectId = async (req, res) => {
       telefono: post.telefono_contacto || '',
       fecha_postulacion: post.fecha_postulacion,
       estado_postulacion: post.estado_postulacion,
-      solicitud_pendiente: post.solicitud_pendiente // ✅ NUEVO CAMPO
+      solicitud_pendiente: post.solicitud_pendiente
     }));
 
     res.json(formattedPostulations);
@@ -179,29 +179,60 @@ const hireFreelancer = async (req, res) => {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // Obtener datos de la postulación
-    const { getPostulacionData } = require('../../queries/notification/notificationHelperQueries');
-    const postulacionData = await getPostulacionData(id_postulacion, connection);
+    // ✅ 1. Obtener datos completos de la postulación
+    const [postulacionData] = await connection.query(
+      `SELECT 
+        po.id_postulacion,
+        po.id_freelancer,
+        po.id_publicacion,
+        po.estado_postulacion,
+        f.id_usuario AS id_usuario_freelancer,
+        CONCAT(COALESCE(ap.nombres, ''), ' ', COALESCE(ap.apellidos, '')) AS nombre_freelancer,
+        u_freelancer.correo AS correo_freelancer,
+        pp.id_proyecto,
+        pr.nombre_proyecto AS titulo_proyecto,
+        e.id_usuario AS id_usuario_empresa,
+        e.nombre_empresa,
+        u_empresa.correo AS correo_empresa
+       FROM postulacion po
+       INNER JOIN freelancer f ON po.id_freelancer = f.id_freelancer
+       LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
+       INNER JOIN usuario u_freelancer ON f.id_usuario = u_freelancer.id_usuario
+       INNER JOIN publicacion_proyecto pp ON po.id_publicacion = pp.id_publicacion
+       INNER JOIN proyecto pr ON pp.id_proyecto = pr.id_proyecto
+       INNER JOIN empresa e ON pr.id_empresa = e.id_empresa
+       INNER JOIN usuario u_empresa ON e.id_usuario = u_empresa.id_usuario
+       WHERE po.id_postulacion = ?`,
+      [id_postulacion]
+    );
 
-    if (!postulacionData) {
+    if (!postulacionData || postulacionData.length === 0) {
       await connection.rollback();
       return res.status(404).json({ error: "Postulación no encontrada" });
     }
 
-    // Verificar que el usuario sea el dueño del proyecto
-    if (postulacionData.id_usuario_empresa !== id_usuario) {
+    const postulacion = postulacionData[0];
+
+    // ✅ 2. Verificar que el usuario sea el dueño del proyecto
+    if (postulacion.id_usuario_empresa !== id_usuario) {
       await connection.rollback();
       return res.status(403).json({ error: "No tienes permiso para contratar en este proyecto" });
     }
 
-    // ✅ Actualizar estado de la postulación a 'aceptada' o 'en proceso'
+    // ✅ 3. Verificar que la postulación no esté ya aceptada
+    if (postulacion.estado_postulacion === 'aceptada' || postulacion.estado_postulacion === 'en proceso') {
+      await connection.rollback();
+      return res.status(400).json({ error: "Este freelancer ya fue contratado" });
+    }
+
+    // ✅ 4. Actualizar estado de la postulación a 'aceptada'
     await connection.query(
       "UPDATE postulacion SET estado_postulacion = 'aceptada' WHERE id_postulacion = ?",
       [id_postulacion]
     );
 
-    // ✅ Crear conversación automáticamente
-    const [user1, user2] = [postulacionData.id_usuario_empresa, postulacionData.id_usuario_freelancer].sort((a, b) => a - b);
+    // ✅ 5. Crear o encontrar conversación automáticamente
+    const [user1, user2] = [postulacion.id_usuario_empresa, postulacion.id_usuario_freelancer].sort((a, b) => a - b);
     
     const [existingConv] = await connection.query(
       "SELECT id_conversation FROM conversations WHERE id_user_one = ? AND id_user_two = ?",
@@ -213,55 +244,81 @@ const hireFreelancer = async (req, res) => {
       id_conversation = existingConv[0].id_conversation;
     } else {
       const [convResult] = await connection.query(
-        "INSERT INTO conversations (id_user_one, id_user_two) VALUES (?, ?)",
+        "INSERT INTO conversations (id_user_one, id_user_two, created_at) VALUES (?, ?, NOW())",
         [user1, user2]
       );
       id_conversation = convResult.insertId;
     }
 
-    // ✅ Enviar notificaciones a ambas partes
-    const { notificarPostulacionAceptada } = require('../../services/notificationService');
-    
-    // Notificar al freelancer
-    await notificarPostulacionAceptada(
-      postulacionData.id_usuario_freelancer,
-      postulacionData.nombre_proyecto,
-      postulacionData.id_publicacion,
-      connection
+    // ✅ 6. Crear solicitud de chat automática (aceptada)
+    const [existingSolicitud] = await connection.query(
+      `SELECT id_solicitud FROM solicitudes_contacto 
+       WHERE id_postulacion = ? AND tipo_solicitud = 'chat'`,
+      [id_postulacion]
     );
 
-    // Notificar a la empresa (opcional)
+    if (existingSolicitud.length === 0) {
+      await connection.query(
+        `INSERT INTO solicitudes_contacto 
+         (id_postulacion, id_solicitante, id_receptor, tipo_solicitud, estado_solicitud, fecha_creacion)
+         VALUES (?, ?, ?, 'chat', 'aceptada', NOW())`,
+        [id_postulacion, postulacion.id_usuario_empresa, postulacion.id_usuario_freelancer]
+      );
+    } else {
+      // Actualizar a aceptada si existe pero está pendiente
+      await connection.query(
+        `UPDATE solicitudes_contacto 
+         SET estado_solicitud = 'aceptada' 
+         WHERE id_solicitud = ?`,
+        [existingSolicitud[0].id_solicitud]
+      );
+    }
+
+    // ✅ 7. Enviar notificación al freelancer
     await connection.query(
       `INSERT INTO notificaciones 
-       (id_usuario_receptor, tipo_notificacion, mensaje, enlace) 
-       VALUES (?, ?, ?, ?)`,
+       (id_usuario_receptor, tipo_notificacion, mensaje, enlace, fecha_creacion) 
+       VALUES (?, ?, ?, ?, NOW())`,
       [
-        postulacionData.id_usuario_empresa,
+        postulacion.id_usuario_freelancer,
+        'postulacion_aceptada',
+        `¡Felicitaciones! Has sido contratado para el proyecto '${postulacion.titulo_proyecto}'. Ya puedes chatear con la empresa.`,
+        `/chat/${id_conversation}`
+      ]
+    );
+
+    // ✅ 8. Enviar notificación a la empresa
+    await connection.query(
+      `INSERT INTO notificaciones 
+       (id_usuario_receptor, tipo_notificacion, mensaje, enlace, fecha_creacion) 
+       VALUES (?, ?, ?, ?, NOW())`,
+      [
+        postulacion.id_usuario_empresa,
         'freelancer_contratado',
-        `Has contratado a '${postulacionData.nombre_freelancer}' para el proyecto '${postulacionData.nombre_proyecto}'.`,
+        `Has contratado a '${postulacion.nombre_freelancer}' para el proyecto '${postulacion.titulo_proyecto}'.`,
         `/chat/${id_conversation}`
       ]
     );
 
     await connection.commit();
 
-    // ✅ Emitir notificaciones en tiempo real
+    // ✅ 9. Emitir notificaciones en tiempo real (Socket.io)
     try {
       const io = req.app.get('socketio');
       
       if (io) {
         // Notificar al freelancer
-        io.to(`user_${postulacionData.id_usuario_freelancer}`).emit('new_notification', {
+        io.to(`user_${postulacion.id_usuario_freelancer}`).emit('new_notification', {
           tipo: 'postulacion_aceptada',
-          mensaje: `¡Felicitaciones! Has sido contratado para el proyecto '${postulacionData.nombre_proyecto}'.`,
+          mensaje: `¡Felicitaciones! Has sido contratado para el proyecto '${postulacion.titulo_proyecto}'.`,
           enlace: `/chat/${id_conversation}`,
           fecha: new Date()
         });
 
         // Notificar a la empresa
-        io.to(`user_${postulacionData.id_usuario_empresa}`).emit('new_notification', {
+        io.to(`user_${postulacion.id_usuario_empresa}`).emit('new_notification', {
           tipo: 'freelancer_contratado',
-          mensaje: `Has contratado a '${postulacionData.nombre_freelancer}'. Ya pueden chatear.`,
+          mensaje: `Has contratado a '${postulacion.nombre_freelancer}'. Ya pueden chatear.`,
           enlace: `/chat/${id_conversation}`,
           fecha: new Date()
         });
@@ -272,7 +329,9 @@ const hireFreelancer = async (req, res) => {
 
     res.json({ 
       message: "Freelancer contratado exitosamente",
-      id_conversation
+      id_conversation,
+      nombre_freelancer: postulacion.nombre_freelancer,
+      titulo_proyecto: postulacion.titulo_proyecto
     });
 
   } catch (error) {

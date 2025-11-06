@@ -182,6 +182,13 @@ const getConversationById = async (req, res) => {
         const { conversationId } = req.params;
         const { id_usuario } = req.user;
 
+         console.log('🔍 Intentando cargar conversación:', conversationId, 'para usuario:', id_usuario);
+
+        // ✅ Validar que conversationId sea un número válido
+        if (!conversationId || isNaN(conversationId)) {
+            return res.status(400).json({ error: 'ID de conversación inválido' });
+        }
+
         // Obtener información de la conversación
         const [conversationInfo] = await pool.query(
             `SELECT 
@@ -250,7 +257,6 @@ const getConversationById = async (req, res) => {
         res.status(500).json({ error: 'Error al obtener la conversación.' });
     }
 };
-
 
 module.exports = {
     getConversations,
