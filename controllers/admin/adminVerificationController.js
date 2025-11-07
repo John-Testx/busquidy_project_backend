@@ -1,5 +1,6 @@
 const pool = require("../../db");
 const { crearNotificacion } = require("../../services/notificationService");
+const { generateV4ReadSignedUrl } = require("../../services/gcsVerificationService");
 
 /**
  * GET /api/admin/verificacion/usuarios
@@ -44,20 +45,25 @@ const getVerificationDocsForUser = async (req, res) => {
         }
 
         const [documents] = await pool.query(
-            `SELECT 
-                id_documento,
-                tipo_documento, 
-                url_documento, 
-                estado_documento,
-                comentario_rechazo,
-                fecha_subida
-            FROM documentos_verificacion 
-            WHERE id_usuario = ?
-            ORDER BY fecha_subida DESC`,
+            "SELECT * FROM documentos_verificacion WHERE id_usuario = ?",
             [userId]
         );
+        const documentsWithSignedUrls = await Promise.all(
+            documents.map(async (doc) => {
+                // Generamos la URL firmada para la visualización
+                const signedUrl = await generateV4ReadSignedUrl(doc.url_documento);
+                return {
+                    ...doc,
+                    url_documento: signedUrl // ¡Aquí está la magia!
+                };
+            })
+        );
 
-        res.json({ user: user[0], documents });
+        res.json({
+            user: user[0],
+            documents: documentsWithSignedUrls 
+        });
+
     } catch (error) {
         console.error('❌ Error en getVerificationDocsForUser:', error);
         res.status(500).json({ error: 'Error al obtener documentos del usuario' });

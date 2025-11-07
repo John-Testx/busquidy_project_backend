@@ -166,14 +166,19 @@ const updateLastLogin = async (id_usuario) => {
 };
 
 /**
- * Eliminar usuario
+ * Elimina un usuario de la base de datos por su ID
+ * @param {number} id_usuario - ID del usuario a eliminar
+ * @returns {Promise<boolean>} True si se eliminó, false si no
  */
 const deleteUserById = async (id_usuario) => {
-  const [result] = await pool.query(
-    "DELETE FROM usuario WHERE id_usuario = ?",
-    [id_usuario]
-  );
-  return result.affectedRows > 0;
+  const query = "DELETE FROM usuario WHERE id_usuario = ?";
+  try {
+    const [result] = await pool.query(query, [id_usuario]);
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error("Error en deleteUserById query:", error);
+    throw error;
+  }
 };
 
 const deactivateUserById = (id_usuario) => {

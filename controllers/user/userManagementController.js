@@ -1,6 +1,7 @@
 const userQueries = require("../../queries/user/userQueries");
 const profileQueries = require("../../queries/user/profileQueries");
 const bcrypt = require("bcryptjs");
+const pool = require("../../db");
 
 /**
  * Controlador de gestión de usuarios
@@ -105,20 +106,33 @@ const getUsersWithData = async (req, res) => {
 
 // Eliminar usuario
 const deleteUser = async (req, res) => {
-    try {
-        const { userId } = req.params;
-        
-        // 1. Desactivamos el usuario
-        await userQueries.deactivateUserById(userId); // (Tendrás que crear esta query)
+  // OJO: Tu ruta usa "id_usuario" como parámetro
+  const { id_usuario } = req.params; 
 
-        // 2. (Opcional pero recomendado) Anonimizamos datos sensibles
-        await userQueries.anonymizeUser(userId, `deleted_${userId}@busquidy.com`);
+  try {
+    // 1. Usamos la nueva query que creamos en el Paso 1
+    const success = await userQueries.deleteUserById(id_usuario);
 
-        res.status(200).send("Usuario desactivado exitosamente");
-    } catch (error) {
-        console.error("Error al desactivar usuario:", error);
-        res.status(500).send("Error al desactivar usuario");
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: "Usuario eliminado exitosamente" 
+      });
+    } else {
+      res.status(404).json({ error: "Usuario no encontrado" });
     }
+  } catch (err) {
+    console.error("❌ Error en deleteUser controller:", err);
+    
+    // Manejo de errores de Clave Foránea (si intentas borrar una empresa con proyectos)
+    if (err.code === 'ER_ROW_IS_REFERENCED_2') {
+      return res.status(400).json({ 
+        error: "No se puede eliminar el usuario. Está referenciado por otros datos (proyectos, postulaciones, etc.)" 
+      });
+    }
+    
+    res.status(500).json({ error: "Error interno al eliminar el usuario" });
+  }
 };
 
 /**
