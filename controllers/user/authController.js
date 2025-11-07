@@ -111,12 +111,9 @@ const register = async (req, res) => {
 
     // Hashear la contraseña
     const hashedPassword = await bcrypt.hash(contraseña, 10);
-    console.log("Contraseña hasheada:", hashedPassword);
 
-    // Insertar usuario (sin marcar como activo aún)
-    console.log("Correo:", correo, "Tipo de usuario:", tipo_usuario);
+    // Insertar usuario con estado_verificacion = 'no_verificado' (es el default en la BD)
     const id_usuario = await userQueries.insertUser(correo, hashedPassword, tipo_usuario);
-    console.log("ID Usuario insertado:", id_usuario);
 
     // Crear perfil dependiendo del tipo de usuario
     if (tipo_usuario === "empresa_juridico" || tipo_usuario === "empresa_natural") {

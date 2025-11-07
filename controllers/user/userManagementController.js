@@ -105,26 +105,20 @@ const getUsersWithData = async (req, res) => {
 
 // Eliminar usuario
 const deleteUser = async (req, res) => {
-  const id_usuario = req.params.id_usuario;
+    try {
+        const { userId } = req.params;
+        
+        // 1. Desactivamos el usuario
+        await userQueries.deactivateUserById(userId); // (Tendrás que crear esta query)
 
-  // Validar que el id_usuario sea válido
-  if (!id_usuario || isNaN(id_usuario)) {
-    return res.status(400).json({ error: "ID de usuario inválido" });
-  }
+        // 2. (Opcional pero recomendado) Anonimizamos datos sensibles
+        await userQueries.anonymizeUser(userId, `deleted_${userId}@busquidy.com`);
 
-  try {
-    // Verificar usuario
-    const usuario = await userQueries.findUserById(id_usuario);
-    if (usuario.length === 0) {
-      return res.status(404).json({ error: "No se encontró el usuario" });
+        res.status(200).send("Usuario desactivado exitosamente");
+    } catch (error) {
+        console.error("Error al desactivar usuario:", error);
+        res.status(500).send("Error al desactivar usuario");
     }
-
-    await userQueries.deleteUserById(id_usuario);
-    res.status(200).json({ message: "Usuario eliminado exitosamente" });
-  } catch (error) {
-    console.error("Error al eliminar el usuario:", error);
-    res.status(500).json({ error: "Error al eliminar el usuario" });
-  }
 };
 
 /**
@@ -201,6 +195,30 @@ const updateCredentials = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/users/me
+ * Obtiene la información del usuario autenticado
+ */
+const getUserInfo = async (req, res) => {
+  try {
+    const userId = req.user.id_usuario;
+    
+    const [user] = await pool.query(
+      "SELECT id_usuario, correo, tipo_usuario, estado_verificacion FROM usuario WHERE id_usuario = ?",
+      [userId]
+    );
+
+    if (user.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    res.json(user[0]);
+  } catch (error) {
+    console.error('Error en getUserInfo:', error);
+    res.status(500).json({ error: 'Error al obtener información del usuario' });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
@@ -208,5 +226,6 @@ module.exports = {
   updateUserDetails,
   getUsersWithData,
   deleteUser,
-  updateCredentials
+  updateCredentials,
+  getUserInfo,
 };

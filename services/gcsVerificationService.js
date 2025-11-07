@@ -34,11 +34,8 @@ const uploadFile = (file, userId, tipoDocumento) => {
         });
 
         blobStream.on('finish', () => {
-            // Hacer el archivo público
-            blob.makePublic().then(() => {
-                const publicUrl = `https://storage.googleapis.com/${bucket.name}/${blob.name}`;
-                resolve(publicUrl);
-            }).catch(reject);
+            const publicUrl = `https://storage.googleapis.com/${bucket.name}/${blob.name}`;
+            resolve(publicUrl);
         });
 
         blobStream.end(file.buffer);

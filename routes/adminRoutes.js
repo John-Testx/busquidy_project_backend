@@ -25,8 +25,8 @@ const {
 } = require("../controllers/admin/disputeController");
 
 const {
-  getPendingVerifications,
-  getUserVerificationDetails,
+  getVerificationUsers,
+  getVerificationDocsForUser,
   approveUser,
   rejectUser,
 } = require("../controllers/admin/adminVerificationController");
@@ -48,10 +48,10 @@ router.patch("/:id/roles", updateAdminRoles);
 router.get("/disputes/projects", verifyToken, getDisputedProjects);
 router.post("/disputes/refund/:id_proyecto", verifyToken, refundProjectPayment);
 
-// (Añadir al router de admin, protegido por admin auth)
-router.get('/verificaciones/pendientes', getPendingVerifications);
-router.get('/verificaciones/usuario/:id', getUserVerificationDetails);
-router.post('/verificaciones/aprobar', approveUser);
-router.post('/verificaciones/rechazar', rejectUser);
+// ============= RUTAS DE VERIFICACIÓN DE DOCUMENTOS =============
+router.get('/verificacion/usuarios', verifyToken, getVerificationUsers);
+router.get('/verificacion/documentos/:userId', verifyToken, getVerificationDocsForUser);
+router.post('/verificacion/approve/:userId', verifyToken, approveUser);
+router.post('/verificacion/reject/:userId', verifyToken, rejectUser);
 
 module.exports = router;

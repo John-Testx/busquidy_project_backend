@@ -1,127 +1,116 @@
-const userQueries = require('../../queries/user/userQueries');
-const gcsService = require('../../services/gcsVerificationService');
-const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
 const pool = require('../../db');
-
-const JWT_SECRET = process.env.JWT_SECRET;
+const gcsService = require('../../services/gcsVerificationService');
+const { crearNotificacion } = require('../../services/notificationService');
 
 /**
- * Valida el token de verificación y genera un JWT para autenticar al usuario
+ * POST /api/verification/upload-docs
+ * Maneja la subida de múltiples documentos
  */
-const validateToken = async (req, res) => {
-    const { token } = req.params;
+const handleUpload = async (req, res) => {
+    const userId = req.user.id_usuario;
+    const files = req.files; // Array de archivos
+    const tiposDocumentos = req.body.tiposDocumentos; // Array de strings
 
     try {
-        if (!token) {
-            return res.status(400).json({ error: 'Token no proporcionado' });
+        if (!files || files.length === 0) {
+            return res.status(400).json({ error: 'No se proporcionaron archivos' });
         }
 
-        // Hashear el token para comparar
-        const hashedToken = crypto
-            .createHash('sha256')
-            .update(token)
-            .digest('hex');
-
-        // Buscar usuario por token
-        const user = await userQueries.findUserByVerificationToken(hashedToken);
-
-        if (!user) {
-            return res.status(400).json({ 
-                error: 'Token inválido o expirado. Solicita un nuevo enlace de verificación.' 
-            });
+        if (!tiposDocumentos || !Array.isArray(tiposDocumentos)) {
+            return res.status(400).json({ error: 'Tipos de documento no especificados correctamente' });
         }
 
-        // Generar JWT para que el usuario pueda subir documentos
-        const jwtToken = jwt.sign(
-            { 
-                id_usuario: user.id_usuario, 
-                tipo_usuario: user.tipo_usuario 
-            },
-            JWT_SECRET,
-            { expiresIn: '2h' }
+        if (files.length !== tiposDocumentos.length) {
+            return res.status(400).json({ error: 'El número de archivos no coincide con los tipos de documento' });
+        }
+
+        console.log(`📤 Subiendo ${files.length} documentos para usuario ${userId}`);
+
+        // Procesar cada archivo
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const tipoDocumento = tiposDocumentos[i];
+
+            // Subir a GCS
+            const publicUrl = await gcsService.uploadFile(file, userId, tipoDocumento);
+
+            // Guardar/actualizar en BD usando ON DUPLICATE KEY UPDATE
+            const query = `
+                INSERT INTO documentos_verificacion 
+                (id_usuario, tipo_documento, url_documento, estado_documento)
+                VALUES (?, ?, ?, 'subido')
+                ON DUPLICATE KEY UPDATE 
+                    url_documento = VALUES(url_documento), 
+                    estado_documento = 'subido',
+                    comentario_rechazo = NULL,
+                    fecha_subida = CURRENT_TIMESTAMP
+            `;
+            await pool.query(query, [userId, tipoDocumento, publicUrl]);
+
+            console.log(`✅ Documento ${tipoDocumento} subido: ${publicUrl}`);
+        }
+
+        // Actualizar estado del usuario a 'en_revision'
+        await pool.query(
+            "UPDATE usuario SET estado_verificacion = 'en_revision' WHERE id_usuario = ?",
+            [userId]
         );
 
-        console.log(`✅ Token validado para usuario ID: ${user.id_usuario}`);
+        // Crear notificación para el Admin
+        // Obtener información del usuario para la notificación
+        const [userData] = await pool.query(
+            "SELECT correo, tipo_usuario FROM usuario WHERE id_usuario = ?",
+            [userId]
+        );
 
-        res.status(200).json({
-            message: 'Token válido',
-            token: jwtToken,
-            user: {
-                id_usuario: user.id_usuario,
-                correo: user.correo,
-                tipo_usuario: user.tipo_usuario
+        if (userData.length > 0) {
+            const user = userData[0];
+            
+            // Obtener todos los admins
+            const [admins] = await pool.query(
+                "SELECT id_usuario FROM usuario WHERE tipo_usuario = 'administrador'"
+            );
+
+            // Notificar a cada admin
+            for (const admin of admins) {
+                await crearNotificacion({
+                    id_usuario_receptor: admin.id_usuario,
+                    tipo_notificacion: 'NUEVA_VERIFICACION',
+                    mensaje: `Nueva solicitud de verificación de ${user.correo} (${user.tipo_usuario})`,
+                    enlace: `/adminhome/verificaciones/detalle/${userId}`
+                });
             }
-        });
-
-    } catch (error) {
-        console.error('Error al validar token:', error);
-        res.status(500).json({ error: 'Error al validar el token' });
-    }
-};
-
-/**
- * Sube un documento a GCS y registra en la BD
- */
-const uploadDocument = async (req, res) => {
-    const userId = req.user.id_usuario;
-    const { tipo_documento } = req.body;
-    const file = req.file;
-
-    try {
-        if (!file) {
-            return res.status(400).json({ error: 'No se proporcionó ningún archivo' });
         }
 
-        if (!tipo_documento) {
-            return res.status(400).json({ error: 'Tipo de documento no especificado' });
-        }
-
-        // Validar tipos de documentos permitidos
-        const tiposPermitidos = ['dni_frente', 'dni_reverso', 'antecedentes', 'comprobante_domicilio'];
-        if (!tiposPermitidos.includes(tipo_documento)) {
-            return res.status(400).json({ error: 'Tipo de documento no válido' });
-        }
-
-        console.log(`Subiendo documento ${tipo_documento} para usuario ${userId}`);
-
-        // Subir a GCS
-        const publicUrl = await gcsService.uploadFile(file, userId, tipo_documento);
-
-        // Guardar/actualizar en la BD
-        const query = `
-            INSERT INTO documentos_verificacion (id_usuario, tipo_documento, url_documento, estado_documento)
-            VALUES (?, ?, ?, 'subido')
-            ON DUPLICATE KEY UPDATE 
-                url_documento = VALUES(url_documento), 
-                estado_documento = 'subido',
-                fecha_subida = CURRENT_TIMESTAMP
-        `;
-        await pool.query(query, [userId, tipo_documento, publicUrl]);
-
-        console.log(`✅ Documento ${tipo_documento} subido exitosamente para usuario ${userId}`);
+        console.log(`✅ Documentos procesados y usuario actualizado a 'en_revision'`);
 
         res.status(200).json({ 
-            message: 'Documento subido con éxito', 
-            url: publicUrl,
-            tipo_documento 
+            message: 'Documentos subidos exitosamente. Tu cuenta está en revisión.',
+            totalUploaded: files.length
         });
 
     } catch (error) {
-        console.error('Error al subir documento:', error);
-        res.status(500).json({ error: 'Error al subir el documento' });
+        console.error('❌ Error en handleUpload:', error);
+        res.status(500).json({ error: 'Error al procesar los documentos' });
     }
 };
 
 /**
- * Obtiene todos los documentos del usuario
+ * GET /api/verification/my-documents
+ * Obtiene los documentos del usuario autenticado
  */
-const getUserDocuments = async (req, res) => {
+const getMyDocuments = async (req, res) => {
     const userId = req.user.id_usuario;
 
     try {
         const query = `
-            SELECT tipo_documento, url_documento, estado_documento, fecha_subida, comentario_rechazo
+            SELECT 
+                id_documento,
+                tipo_documento,
+                url_documento,
+                estado_documento,
+                comentario_rechazo,
+                fecha_subida
             FROM documentos_verificacion
             WHERE id_usuario = ?
             ORDER BY fecha_subida DESC
@@ -131,82 +120,12 @@ const getUserDocuments = async (req, res) => {
         res.status(200).json({ documentos });
 
     } catch (error) {
-        console.error('Error al obtener documentos:', error);
+        console.error('❌ Error al obtener documentos:', error);
         res.status(500).json({ error: 'Error al obtener los documentos' });
     }
 };
 
-/**
- * Envía todos los documentos a revisión
- */
-const submitForReview = async (req, res) => {
-    const userId = req.user.id_usuario;
-
-    try {
-        // Obtener el tipo de usuario para validar documentos requeridos
-        const [userResult] = await pool.query(
-            'SELECT tipo_usuario FROM usuario WHERE id_usuario = ?',
-            [userId]
-        );
-
-        if (userResult.length === 0) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-
-        const tipoUsuario = userResult[0].tipo_usuario;
-
-        // Obtener documentos subidos
-        const [documentos] = await pool.query(
-            'SELECT tipo_documento FROM documentos_verificacion WHERE id_usuario = ? AND estado_documento = "subido"',
-            [userId]
-        );
-
-        const tiposSubidos = documentos.map(doc => doc.tipo_documento);
-
-        // Validar documentos requeridos según tipo de usuario
-        let documentosRequeridos = ['dni_frente', 'dni_reverso'];
-        
-        if (tipoUsuario === 'freelancer') {
-            documentosRequeridos.push('antecedentes');
-        } else if (tipoUsuario === 'empresa_juridico' || tipoUsuario === 'empresa_natural') {
-            documentosRequeridos.push('comprobante_domicilio');
-        }
-
-        const faltantes = documentosRequeridos.filter(doc => !tiposSubidos.includes(doc));
-
-        if (faltantes.length > 0) {
-            return res.status(400).json({ 
-                error: 'Faltan documentos requeridos',
-                documentos_faltantes: faltantes 
-            });
-        }
-
-        // Actualizar estado de verificación del usuario
-        await userQueries.updateVerificationStatus(userId, 'en_revision');
-
-        // Actualizar estado de todos los documentos
-        await pool.query(
-            'UPDATE documentos_verificacion SET estado_documento = "en_revision" WHERE id_usuario = ?',
-            [userId]
-        );
-
-        console.log(`✅ Documentos enviados a revisión para usuario ${userId}`);
-
-        // TODO: Aquí puedes enviar una notificación al admin o crear un registro en una tabla de tareas
-
-        res.status(200).json({ 
-            message: 'Documentos enviados a revisión exitosamente. Te notificaremos cuando sean aprobados.' 
-        });
-
-    } catch (error) {
-        console.error('Error al enviar documentos a revisión:', error);
-        res.status(500).json({ error: 'Error al procesar la solicitud' });
-    }
-};
-
 module.exports = {
-    validateToken,
-    uploadDocument,
-    getUserDocuments,
-    submitForReview,
+    handleUpload,
+    getMyDocuments,
 };

@@ -28,6 +28,7 @@ const {
   getUsersWithData,
   deleteUser,
   updateCredentials,
+  getUserInfo,
 } = require("../controllers/user/userManagementController");
 
 // ✅ 1. Importar el nuevo controlador de "USO"
@@ -64,6 +65,7 @@ router.get("/:id", getUserById);
 router.patch("/:id/status", updateUserStatus);
 router.patch("/:id", updateUserDetails);
 router.delete("/delete/:id_usuario", deleteUser);
+router.get("/me", verifyToken, getUserInfo);
 
 // ============= RUTAS DE AUTENTICACIÓN SOCIAL (OAuth) =============
 

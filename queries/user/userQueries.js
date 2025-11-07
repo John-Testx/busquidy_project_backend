@@ -176,6 +176,10 @@ const deleteUserById = async (id_usuario) => {
   return result.affectedRows > 0;
 };
 
+const deactivateUserById = (id_usuario) => {
+  return pool.query("UPDATE usuario SET is_active = false WHERE id_usuario = ?", [id_usuario]);
+};
+
 /**
  * Guarda el token de reseteo de contraseña
  * @param {string} correo - Correo del usuario
@@ -339,6 +343,7 @@ module.exports = {
   updateUserEmail,
   updateLastLogin,
   deleteUserById,
+  deactivateUserById,
   saveResetToken,
   findUserByResetToken,
   updatePasswordAndClearToken,
