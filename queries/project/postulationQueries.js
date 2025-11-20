@@ -11,28 +11,30 @@ const findPostulationsByProjectId = async (id_proyecto) => {
   const [rows] = await pool.query(
     `SELECT 
       p.*,
-      f.id_usuario, 
       ap.nombres,
       ap.apellidos,
       f.correo_contacto,
+      f.id_usuario,
+      f.id_freelancer as id_freelancer,
       f.telefono_contacto,
-      (SELECT es.carrera FROM educacion_superior es WHERE es.id_freelancer = f.id_freelancer ORDER BY es.ano_termino DESC LIMIT 1) AS titulo_profesional,
-      (SELECT tp.empresa FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultima_empresa,
-      (SELECT tp.cargo FROM trabajo_practica tp WHERE tp.id_freelancer = f.id_freelancer ORDER BY tp.ano_inicio DESC LIMIT 1) AS ultimo_cargo,
-      pr.renta_esperada,
-      CASE 
-        WHEN sc.id_solicitud IS NOT NULL AND sc.estado_solicitud = 'pendiente' 
-        THEN TRUE 
-        ELSE FALSE 
-      END AS solicitud_pendiente
+      es.carrera AS titulo_profesional,
+      tp.empresa AS ultima_empresa,
+      tp.cargo AS ultimo_cargo,
+      pr.renta_esperada
     FROM postulacion p
-    JOIN publicacion_proyecto pp ON p.id_publicacion = pp.id_publicacion
-    JOIN freelancer f ON p.id_freelancer = f.id_freelancer
+    
+    -- VINCULAR LA TABLA DE PUBLICACIÓN --
+    JOIN publicacion_proyecto pub ON p.id_publicacion = pub.id_publicacion
+    LEFT JOIN freelancer f ON p.id_freelancer = f.id_freelancer
+    LEFT JOIN usuario u ON f.id_usuario = u.id_usuario
     LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
+    LEFT JOIN educacion_superior es ON f.id_freelancer = es.id_freelancer
+    LEFT JOIN trabajo_practica tp ON f.id_freelancer = tp.id_freelancer
     LEFT JOIN pretensiones pr ON f.id_freelancer = pr.id_freelancer
-    LEFT JOIN solicitudes_contacto sc ON p.id_postulacion = sc.id_postulacion AND sc.estado_solicitud = 'pendiente'
-    WHERE pp.id_proyecto = ?
-    GROUP BY p.id_postulacion
+    
+    -- FILTRAR POR EL ID_PROYECTO DESDE LA TABLA DE PUBLICACIÓN --
+    WHERE pub.id_proyecto = ?
+    
     ORDER BY p.fecha_postulacion DESC`,
     [id_proyecto]
   );
