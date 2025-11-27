@@ -31,6 +31,13 @@ const {
   rejectUser,
 } = require("../controllers/admin/adminVerificationController");
 
+const {
+  getAllQuestions,
+  createQuestion,
+  updateQuestion,
+  deleteQuestion
+} = require("../controllers/admin/testController");
+
 // ============= RUTAS DE PERMISOS =============
 router.get("/permissions/:userId", getAdminPermissions);
 
@@ -53,5 +60,11 @@ router.get('/verificacion/usuarios', verifyToken, getVerificationUsers);
 router.get('/verificacion/documentos/:userId', verifyToken, getVerificationDocsForUser);
 router.post('/verificacion/approve/:userId', verifyToken, approveUser);
 router.post('/verificacion/reject/:userId', verifyToken, rejectUser);
+
+// === RUTAS DE BUSQUIDY TEST ===
+router.get("/test/questions", getAllQuestions);
+router.post("/test/questions", createQuestion);
+router.put("/test/questions/:id", updateQuestion);
+router.delete("/test/questions/:id", deleteQuestion);
 
 module.exports = router;
