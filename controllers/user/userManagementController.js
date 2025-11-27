@@ -214,13 +214,15 @@ const updateCredentials = async (req, res) => {
  * Obtiene la información del usuario autenticado
  */
 const getUserInfo = async (req, res) => {
+  const userId = req.user.id_usuario;
+  console.log("getUserInfo - id_usuario del token:", userId);
+
   try {
     const userId = req.user.id_usuario;
     
-    const [user] = await pool.query(
-      "SELECT id_usuario, correo, tipo_usuario, estado_verificacion FROM usuario WHERE id_usuario = ?",
-      [userId]
-    );
+    const user = await userQueries.findUserById(userId);
+
+    console.log("getUserInfo - usuario obtenido:", user);
 
     if (user.length === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });

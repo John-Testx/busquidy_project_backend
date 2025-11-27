@@ -60,12 +60,13 @@ router.put("/update-credentials", verifyToken, updateCredentials);
 // ============= RUTAS DE GESTIÓN DE USUARIOS (Para Admin) =============
 // (Estas rutas deberían estar protegidas por un middleware de Admin)
 router.get("/", getAllUsers);
+router.get("/me", verifyToken, getUserInfo);
 router.get("/get/usuarios", getUsersWithData);
 router.get("/:id", getUserById);
 router.patch("/:id/status", updateUserStatus);
 router.patch("/:id", updateUserDetails);
 router.delete("/delete/:id_usuario", deleteUser);
-router.get("/me", verifyToken, getUserInfo);
+
 
 // ============= RUTAS DE AUTENTICACIÓN SOCIAL (OAuth) =============
 
