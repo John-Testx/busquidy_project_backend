@@ -35,7 +35,9 @@ const corsOptions = {
       "https://localhost:3001",
       process.env.DB_TEST_HOST,
       process.env.FRONTEND_URL,
-    ].filter(Boolean);
+    ]
+    .filter(Boolean)
+    .map(url => url.replace(/\/$/, ""));
 
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
