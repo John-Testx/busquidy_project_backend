@@ -116,11 +116,63 @@ const getUsersForChat = async (userId, userType) => {
   return users;
 };
 
+/** Verificar si dos usuarios tienen permiso para chatear.
+ * Un freelancer y una empresa pueden chatear si:
+ * - Tienen una solicitud de chat aceptada, o
+ * - Tienen una postulación aceptada o en proceso entre ellos.
+ */
+
+async function verificarPermisoChat(id_usuario_1, id_usuario_2) {
+  try {
+    // Opción 1: Verificar si existe una solicitud de chat aceptada
+    const [solicitudChat] = await pool.query(
+      `SELECT id_solicitud 
+       FROM solicitudes_contacto 
+       WHERE tipo_solicitud = 'chat'
+         AND estado_solicitud = 'aceptada'
+         AND ((id_solicitante = ? AND id_receptor = ?) 
+              OR (id_solicitante = ? AND id_receptor = ?))
+       LIMIT 1`,
+      [id_usuario_1, id_usuario_2, id_usuario_2, id_usuario_1]
+    );
+
+    if (solicitudChat.length > 0) {
+      return true;
+    }
+
+    // Opción 2: Verificar si existe una postulación aceptada o en proceso
+    const [postulacionAceptada] = await pool.query(
+      `SELECT p.id_postulacion
+       FROM postulacion p
+       INNER JOIN freelancer f ON p.id_freelancer = f.id_freelancer
+       INNER JOIN publicacion_proyecto pp ON p.id_publicacion = pp.id_publicacion
+       INNER JOIN proyecto pr ON pp.id_proyecto = pr.id_proyecto
+       INNER JOIN empresa e ON pr.id_empresa = e.id_empresa
+       WHERE p.estado_postulacion IN ('aceptada', 'en proceso')
+         AND ((f.id_usuario = ? AND e.id_usuario = ?) 
+              OR (f.id_usuario = ? AND e.id_usuario = ?))
+       LIMIT 1`,
+      [id_usuario_1, id_usuario_2, id_usuario_2, id_usuario_1]
+    );
+
+    if (postulacionAceptada.length > 0) {
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Error al verificar permiso de chat:', error);
+    return false;
+  }
+}
+
+
 
 module.exports = {
   startConversation,
   getConversations,
   getMessages,
   createMessage,
-  getUsersForChat
+  getUsersForChat,
+  verificarPermisoChat
 };
