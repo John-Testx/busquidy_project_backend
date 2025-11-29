@@ -13,6 +13,7 @@
   "dependencies": {
     "@google-cloud/cloud-sql-connector": "^1.8.4",
     "@google-cloud/documentai": "^9.5.0",
+    "@google-cloud/storage": "^7.17.3",
     "bcryptjs": "^3.0.2",
     "body-parser": "^2.2.0",
     "compromise": "^14.14.4",

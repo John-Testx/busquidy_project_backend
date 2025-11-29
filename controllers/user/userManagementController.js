@@ -1,6 +1,7 @@
 const userQueries = require("../../queries/user/userQueries");
 const profileQueries = require("../../queries/user/profileQueries");
 const bcrypt = require("bcryptjs");
+const pool = require("../../db");
 
 /**
  * Controlador de gestión de usuarios
@@ -105,25 +106,32 @@ const getUsersWithData = async (req, res) => {
 
 // Eliminar usuario
 const deleteUser = async (req, res) => {
-  const id_usuario = req.params.id_usuario;
-
-  // Validar que el id_usuario sea válido
-  if (!id_usuario || isNaN(id_usuario)) {
-    return res.status(400).json({ error: "ID de usuario inválido" });
-  }
+  // OJO: Tu ruta usa "id_usuario" como parámetro
+  const { id_usuario } = req.params; 
 
   try {
-    // Verificar usuario
-    const usuario = await userQueries.findUserById(id_usuario);
-    if (usuario.length === 0) {
-      return res.status(404).json({ error: "No se encontró el usuario" });
-    }
+    // 1. Usamos la nueva query que creamos en el Paso 1
+    const success = await userQueries.deleteUserById(id_usuario);
 
-    await userQueries.deleteUserById(id_usuario);
-    res.status(200).json({ message: "Usuario eliminado exitosamente" });
-  } catch (error) {
-    console.error("Error al eliminar el usuario:", error);
-    res.status(500).json({ error: "Error al eliminar el usuario" });
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: "Usuario eliminado exitosamente" 
+      });
+    } else {
+      res.status(404).json({ error: "Usuario no encontrado" });
+    }
+  } catch (err) {
+    console.error("❌ Error en deleteUser controller:", err);
+    
+    // Manejo de errores de Clave Foránea (si intentas borrar una empresa con proyectos)
+    if (err.code === 'ER_ROW_IS_REFERENCED_2') {
+      return res.status(400).json({ 
+        error: "No se puede eliminar el usuario. Está referenciado por otros datos (proyectos, postulaciones, etc.)" 
+      });
+    }
+    
+    res.status(500).json({ error: "Error interno al eliminar el usuario" });
   }
 };
 
@@ -201,6 +209,32 @@ const updateCredentials = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/users/me
+ * Obtiene la información del usuario autenticado
+ */
+const getUserInfo = async (req, res) => {
+  const userId = req.user.id_usuario;
+  console.log("getUserInfo - id_usuario del token:", userId);
+
+  try {
+    const userId = req.user.id_usuario;
+    
+    const user = await userQueries.findUserById(userId);
+
+    console.log("getUserInfo - usuario obtenido:", user);
+
+    if (user.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    res.json(user[0]);
+  } catch (error) {
+    console.error('Error en getUserInfo:', error);
+    res.status(500).json({ error: 'Error al obtener información del usuario' });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
@@ -208,5 +242,6 @@ module.exports = {
   updateUserDetails,
   getUsersWithData,
   deleteUser,
-  updateCredentials
+  updateCredentials,
+  getUserInfo,
 };
