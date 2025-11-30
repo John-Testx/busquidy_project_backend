@@ -10,31 +10,56 @@ const pool = require("../../db");
 const findPostulationsByProjectId = async (id_proyecto) => {
   const [rows] = await pool.query(
     `SELECT 
-      p.*,
+      p.id_postulacion,
+      p.fecha_postulacion,
+      p.estado_postulacion,
+      p.id_freelancer,
       ap.nombres,
       ap.apellidos,
       f.correo_contacto,
       f.id_usuario,
-      f.id_freelancer as id_freelancer,
       f.telefono_contacto,
-      es.carrera AS titulo_profesional,
-      tp.empresa AS ultima_empresa,
-      tp.cargo AS ultimo_cargo,
-      pr.renta_esperada
+      
+      -- ✅ SUBCONSULTA: Trae solo la carrera más reciente (por año de término)
+      (SELECT es.carrera 
+       FROM educacion_superior es 
+       WHERE es.id_freelancer = f.id_freelancer 
+       ORDER BY es.ano_termino DESC, es.id_educacion_superior DESC 
+       LIMIT 1) AS titulo_profesional,
+
+      -- ✅ SUBCONSULTA: Trae solo la última empresa donde trabajó
+      (SELECT tp.empresa 
+       FROM trabajo_practica tp 
+       WHERE tp.id_freelancer = f.id_freelancer 
+       ORDER BY tp.ano_inicio DESC, tp.id_experiencia DESC 
+       LIMIT 1) AS ultima_empresa,
+
+      -- ✅ SUBCONSULTA: Trae solo el último cargo
+      (SELECT tp.cargo 
+       FROM trabajo_practica tp 
+       WHERE tp.id_freelancer = f.id_freelancer 
+       ORDER BY tp.ano_inicio DESC, tp.id_experiencia DESC 
+       LIMIT 1) AS ultimo_cargo,
+
+      pr.renta_esperada,
+      
+      -- Verificar si hay solicitud de contacto pendiente (útil para el frontend)
+      CASE 
+        WHEN sc.id_solicitud IS NOT NULL THEN TRUE 
+        ELSE FALSE 
+      END AS solicitud_pendiente
+
     FROM postulacion p
-    
-    -- VINCULAR LA TABLA DE PUBLICACIÓN --
     JOIN publicacion_proyecto pub ON p.id_publicacion = pub.id_publicacion
-    LEFT JOIN freelancer f ON p.id_freelancer = f.id_freelancer
-    LEFT JOIN usuario u ON f.id_usuario = u.id_usuario
+    JOIN freelancer f ON p.id_freelancer = f.id_freelancer
     LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
-    LEFT JOIN educacion_superior es ON f.id_freelancer = es.id_freelancer
-    LEFT JOIN trabajo_practica tp ON f.id_freelancer = tp.id_freelancer
     LEFT JOIN pretensiones pr ON f.id_freelancer = pr.id_freelancer
+    LEFT JOIN solicitudes_contacto sc ON p.id_postulacion = sc.id_postulacion AND sc.estado_solicitud = 'pendiente'
     
-    -- FILTRAR POR EL ID_PROYECTO DESDE LA TABLA DE PUBLICACIÓN --
     WHERE pub.id_proyecto = ?
     
+    -- Agrupar por postulación para asegurar unicidad (capa de seguridad extra)
+    GROUP BY p.id_postulacion 
     ORDER BY p.fecha_postulacion DESC`,
     [id_proyecto]
   );
