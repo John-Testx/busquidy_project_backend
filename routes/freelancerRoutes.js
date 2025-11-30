@@ -12,6 +12,9 @@ const applicationController = require("../controllers/freelancer/freelancerAppli
 const searchController = require("../controllers/freelancer/freelancerSearchController");
 const cvController = require("../controllers/freelancer/freelancerCVController");
 const availabilityRoutes = require('./availabilityRoutes');
+const testController = require('../controllers/freelancer/testController');
+
+
 
 // ============================================
 // RUTAS DE PERFIL
@@ -117,6 +120,14 @@ router.get("/photo/:id_usuario", profileController.getProfilePhoto);
 
 // Descargar CV en formato Busquidy (PDF)
 router.get("/download-cv/:id_usuario", cvController.downloadBusquidyCV);
+
+// ============================================
+// RUTAS DE TEST DE FREELANCER
+// ============================================
+
+router.get('/test/questions', testController.getQuestions);
+router.get('/test/status/:id_usuario', testController.getStatus);
+router.post('/test/submit', testController.submitTest);
 
 // ============================================
 // RUTAS DE PREFERENCIAS
