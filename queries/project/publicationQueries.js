@@ -61,8 +61,9 @@ const findProjectsWithPublicationsDetailed = async () => {
       pub.fecha_publicacion, 
       pub.estado_publicacion
     FROM proyecto p
-    LEFT JOIN publicacion_proyecto pub 
-    ON p.id_proyecto = pub.id_proyecto
+    INNER JOIN publicacion_proyecto pub ON p.id_proyecto = pub.id_proyecto
+    WHERE pub.estado_publicacion = 'activo' 
+    ORDER BY pub.fecha_publicacion DESC      
   `);
   return results;
 };

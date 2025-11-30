@@ -47,7 +47,7 @@ router.get("/publicacion", getAllPublications);
 // ============= RUTAS DE POSTULACIONES =============
 router.get("/:id_proyecto/postulaciones", getPostulationsByProjectId);
 router.get("/publicacion/:id_publicacion/postulaciones", getPostulationsByPublicationId);
-router.post('/postulations/:id_postulacion/hire', verifyToken, hireFreelancer);
+router.post('/hire/:id_postulacion', verifyToken, hireFreelancer);
 
 // Nueva ruta para verificar si el usuario ya postuló (requiere autenticación)
 router.get("/publicacion/:id_publicacion/check-application", optionalAuth, checkIfUserAppliedToPublication);

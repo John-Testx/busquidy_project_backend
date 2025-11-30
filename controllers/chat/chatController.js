@@ -63,7 +63,17 @@ const getConversations = async (req, res) => {
                 ? conv.user_two_id 
                 : conv.user_one_id;
             
-            const hasPermission = await verificarPermisoChat(id_usuario, otherUserId);
+            let hasPermission = await verificarPermisoChat(id_usuario, otherUserId);
+
+            if (!hasPermission) {
+                const [pending] = await pool.query(
+                    `SELECT id_solicitud FROM solicitudes_contacto 
+                    WHERE tipo_solicitud='chat' AND estado_solicitud='pendiente'
+                    AND ((id_solicitante=? AND id_receptor=?) OR (id_solicitante=? AND id_receptor=?)) LIMIT 1`,
+                    [id_usuario, otherUserId, otherUserId, id_usuario]
+                );
+                if (pending.length > 0) hasPermission = true;
+            }
             
             if (hasPermission) {
                 conversationsWithPermission.push(conv);
@@ -220,8 +230,26 @@ const getConversationById = async (req, res) => {
             : conversation.id_user_one;
 
         // ✅ VERIFICAR PERMISO DE CHAT
-        const hasPermission = await verificarPermisoChat(id_usuario, otherUserId);
+        let hasPermission = await verificarPermisoChat(id_usuario, otherUserId);
 
+        if (!hasPermission) {
+            const [solicitudPendiente] = await pool.query(
+                `SELECT id_solicitud 
+                 FROM solicitudes_contacto 
+                 WHERE tipo_solicitud = 'chat'
+                   AND estado_solicitud = 'pendiente'
+                   AND ((id_solicitante = ? AND id_receptor = ?) 
+                        OR (id_solicitante = ? AND id_receptor = ?))
+                 LIMIT 1`,
+                [id_usuario, otherUserId, otherUserId, id_usuario]
+            );
+
+            if (solicitudPendiente.length > 0) {
+                hasPermission = true; // Permiso temporal para ver la solicitud
+            }
+        }
+
+        // Si después de ambas verificaciones sigue sin permiso, bloqueamos
         if (!hasPermission) {
             return res.status(403).json({ 
                 error: 'No tienes permiso para acceder a esta conversación' 
