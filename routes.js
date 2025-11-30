@@ -14,6 +14,7 @@ const chatRoutes = require("./routes/chatRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const contactRequestRoutes = require("./routes/contactRequestRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const verificationRoutes = require('./routes/verificationRoutes');
 
 
 router.use("/support", supportRoutes);
@@ -28,6 +29,7 @@ router.use("/chat", chatRoutes );
 router.use("/notifications", notificationRoutes )
 router.use("/contact-requests", contactRequestRoutes );
 router.use("/subscriptions", subscriptionRoutes);
+router.use('/verification', verificationRoutes);
 
 
 

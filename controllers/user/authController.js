@@ -111,23 +111,41 @@ const register = async (req, res) => {
 
     // Hashear la contraseña
     const hashedPassword = await bcrypt.hash(contraseña, 10);
-    console.log("Contraseña hasheada:", hashedPassword);
 
-    // Insertar usuario
-    console.log("Correo:", correo, "Tipo de usuario:", tipo_usuario);
+    // Insertar usuario con estado_verificacion = 'no_verificado' (es el default en la BD)
     const id_usuario = await userQueries.insertUser(correo, hashedPassword, tipo_usuario);
-    console.log("ID Usuario insertado:", id_usuario);
 
     // Crear perfil dependiendo del tipo de usuario
     if (tipo_usuario === "empresa_juridico" || tipo_usuario === "empresa_natural") {
       await profileQueries.insertEmpresaProfile(id_usuario);
-      res.status(201).json({ message: "Usuario empresa registrado exitosamente" });
     } else if (tipo_usuario === "freelancer") {
       await profileQueries.insertFreelancerProfile(id_usuario);
-      res.status(201).json({ message: "Usuario freelancer registrado exitosamente" });
     } else {
-      res.status(400).json({ error: "Tipo de usuario no válido" });
+      return res.status(400).json({ error: "Tipo de usuario no válido" });
     }
+
+    // Generar token de verificación
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedVerificationToken = crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex');
+    const verificationTokenExpires = new Date(Date.now() + 3600000); // 1 hora
+
+    // Guardar token de verificación en la BD
+    await userQueries.saveVerificationToken(id_usuario, hashedVerificationToken, verificationTokenExpires);
+
+    // Enviar email de verificación
+    const { sendVerificationEmail } = require("../../services/emailService");
+    await sendVerificationEmail(correo, verificationToken);
+
+    console.log(`✅ Email de verificación enviado a: ${correo}`);
+
+    res.status(201).json({ 
+      message: "Registro exitoso. Revisa tu correo para verificar tu cuenta y subir tus documentos.",
+      requiresVerification: true
+    });
+
   } catch (error) {
     console.error("Error en registro:", error.message);
     res.status(500).json({ error: "Error en el servidor" });
