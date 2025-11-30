@@ -20,14 +20,14 @@ const findPostulationsByProjectId = async (id_proyecto) => {
       f.id_usuario,
       f.telefono_contacto,
       
-      -- ✅ SUBCONSULTA: Trae solo la carrera más reciente (por año de término)
+      -- ✅ SUBCONSULTA: Trae solo la carrera más reciente
       (SELECT es.carrera 
        FROM educacion_superior es 
        WHERE es.id_freelancer = f.id_freelancer 
        ORDER BY es.ano_termino DESC, es.id_educacion_superior DESC 
        LIMIT 1) AS titulo_profesional,
 
-      -- ✅ SUBCONSULTA: Trae solo la última empresa donde trabajó
+      -- ✅ SUBCONSULTA: Trae solo la última empresa
       (SELECT tp.empresa 
        FROM trabajo_practica tp 
        WHERE tp.id_freelancer = f.id_freelancer 
@@ -43,23 +43,25 @@ const findPostulationsByProjectId = async (id_proyecto) => {
 
       pr.renta_esperada,
       
-      -- Verificar si hay solicitud de contacto pendiente (útil para el frontend)
-      CASE 
-        WHEN sc.id_solicitud IS NOT NULL THEN TRUE 
-        ELSE FALSE 
-      END AS solicitud_pendiente
+      -- ✅ FIXED: Subquery checks for pending requests.
+      -- This replaces the LEFT JOIN and CASE WHEN, removing the need for GROUP BY.
+      (SELECT COUNT(*) 
+       FROM solicitudes_contacto sc 
+       WHERE sc.id_postulacion = p.id_postulacion 
+       AND sc.estado_solicitud = 'pendiente') > 0 AS solicitud_pendiente
 
     FROM postulacion p
     JOIN publicacion_proyecto pub ON p.id_publicacion = pub.id_publicacion
     JOIN freelancer f ON p.id_freelancer = f.id_freelancer
     LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
     LEFT JOIN pretensiones pr ON f.id_freelancer = pr.id_freelancer
-    LEFT JOIN solicitudes_contacto sc ON p.id_postulacion = sc.id_postulacion AND sc.estado_solicitud = 'pendiente'
+    
+    -- ❌ REMOVED: LEFT JOIN solicitudes_contacto (Moved to subquery above)
     
     WHERE pub.id_proyecto = ?
     
-    -- Agrupar por postulación para asegurar unicidad (capa de seguridad extra)
-    GROUP BY p.id_postulacion 
+    -- ❌ REMOVED: GROUP BY p.id_postulacion (No longer needed, fixes the error)
+    
     ORDER BY p.fecha_postulacion DESC`,
     [id_proyecto]
   );
