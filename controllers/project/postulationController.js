@@ -1,5 +1,6 @@
 const postulationQueries = require("../../queries/project/postulationQueries");
 const profileQueries = require("../../queries/freelancer/profileQueries");
+const db = require("../../db");
 
 /**
  * Controlador de postulaciones
@@ -176,10 +177,11 @@ const hireFreelancer = async (req, res) => {
 
   let connection;
   try {
-    connection = await pool.getConnection();
+    // ✅ 2. USAR LA INSTANCIA 'db' IMPORTADA
+    connection = await db.getConnection(); 
     await connection.beginTransaction();
 
-    // 1. Consulta optimizada para evitar fallos por LEFT JOINS nulos
+    // 1. Consulta optimizada
     const [postulacionData] = await connection.query(
       `SELECT 
         po.id_postulacion,
@@ -191,13 +193,15 @@ const hireFreelancer = async (req, res) => {
         pr.titulo AS titulo_proyecto,
         pr.id_empresa,
         e.id_usuario AS id_usuario_empresa,
-        e.nombre_empresa
+        e.nombre_empresa,
+        CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_freelancer
        FROM postulacion po
        JOIN freelancer f ON po.id_freelancer = f.id_freelancer
        JOIN usuario u_free ON f.id_usuario = u_free.id_usuario
        JOIN publicacion_proyecto pp ON po.id_publicacion = pp.id_publicacion
        JOIN proyecto pr ON pp.id_proyecto = pr.id_proyecto
        JOIN empresa e ON pr.id_empresa = e.id_empresa
+       LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
        WHERE po.id_postulacion = ?`,
       [id_postulacion]
     );
@@ -285,7 +289,7 @@ const hireFreelancer = async (req, res) => {
       [
         postulacion.id_usuario_empresa,
         'freelancer_contratado',
-        `Has contratado a '${postulacion.nombre_freelancer}' para el proyecto '${postulacion.titulo_proyecto}'.`,
+        `Has contratado a '${postulacion.nombre_freelancer || 'Freelancer'}' para el proyecto '${postulacion.titulo_proyecto}'.`,
         `/chat/${id_conversation}`
       ]
     );
@@ -308,7 +312,7 @@ const hireFreelancer = async (req, res) => {
         // Notificar a la empresa
         io.to(`user_${postulacion.id_usuario_empresa}`).emit('new_notification', {
           tipo: 'freelancer_contratado',
-          mensaje: `Has contratado a '${postulacion.nombre_freelancer}'. Ya pueden chatear.`,
+          mensaje: `Has contratado a '${postulacion.nombre_freelancer || 'Freelancer'}'. Ya pueden chatear.`,
           enlace: `/chat/${id_conversation}`,
           fecha: new Date()
         });
@@ -319,7 +323,7 @@ const hireFreelancer = async (req, res) => {
 
     res.json({ 
         message: "Contratación exitosa. Chat habilitado.", 
-        id_conversation: 0 // Si generaste ID de conversacion, ponlo aquí
+        id_conversation: id_conversation
     });
 
   } catch (error) {

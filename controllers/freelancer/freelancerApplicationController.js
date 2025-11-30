@@ -171,8 +171,91 @@ const deleteApplication = async (req, res) => {
   }
 };
 
+const checkApplicationStatus = async (req, res) => {
+  const { id_publicacion } = req.params;
+  
+  // Intentamos obtener id_usuario del query string (ej: ?id_usuario=5)
+  // o del body, dependiendo de cómo hagas la petición desde el front.
+  // Si usas middleware de auth, podría ser req.user.id_usuario.
+  const id_usuario = req.query.id_usuario || req.body.id_usuario || (req.user ? req.user.id_usuario : null);
+
+  if (!id_publicacion || !id_usuario) {
+    return res.status(400).json({ error: "Faltan parámetros (id_publicacion o id_usuario)" });
+  }
+
+  try {
+    // Hacemos un JOIN con freelancer para vincular id_usuario -> id_freelancer -> postulacion
+    const [rows] = await pool.query(`
+      SELECT 
+        p.id_postulacion, 
+        p.estado_postulacion, 
+        p.fecha_postulacion
+      FROM postulacion p
+      INNER JOIN freelancer f ON p.id_freelancer = f.id_freelancer
+      WHERE p.id_publicacion = ? AND f.id_usuario = ?
+      LIMIT 1
+    `, [id_publicacion, id_usuario]);
+
+    if (rows.length > 0) {
+      // El usuario YA postuló
+      return res.json({
+        hasApplied: true,
+        postulacion: rows[0]
+      });
+    } else {
+      // El usuario NO ha postulado aún
+      return res.json({
+        hasApplied: false,
+        postulacion: null
+      });
+    }
+
+  } catch (error) {
+    console.error("Error al verificar el estado de la postulación:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+};
+
+/**
+ * ✅ Obtener proyectos donde el freelancer ha sido CONTRATADO (Activos o Finalizados)
+ */
+const getMyActiveProjects = async (req, res) => {
+  const id_usuario = req.user.id_usuario;
+
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        p.id_proyecto,
+        p.titulo,
+        p.tipo,
+        p.presupuesto,
+        p.fecha_limite,
+        pp.estado_publicacion,
+        po.estado_postulacion,
+        e.nombre_empresa,
+        po.fecha_postulacion as fecha_contrato -- Usamos fecha postulacion referencial o podriamos agregar fecha_contrato
+      FROM postulacion po
+      JOIN freelancer f ON po.id_freelancer = f.id_freelancer
+      JOIN publicacion_proyecto pp ON po.id_publicacion = pp.id_publicacion
+      JOIN proyecto p ON pp.id_proyecto = p.id_proyecto
+      JOIN empresa e ON p.id_empresa = e.id_empresa
+      WHERE f.id_usuario = ? 
+      AND po.estado_postulacion IN ('aceptada', 'finalizada', 'en proceso')
+      ORDER BY p.fecha_limite ASC
+    `, [id_usuario]);
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Error al obtener proyectos activos:", error);
+    res.status(500).json({ error: "Error interno" });
+  }
+};
+
+
 module.exports = {
   createApplication,
   getApplications,
-  deleteApplication
+  deleteApplication,
+  checkApplicationStatus,
+  getMyActiveProjects // ✅ Agregamos la nueva función
 };
