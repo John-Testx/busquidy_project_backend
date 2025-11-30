@@ -85,6 +85,12 @@ router.get("/postulaciones/:id_usuario", applicationController.getApplications);
 // Eliminar postulación
 router.delete("/delete-postulacion/:id_postulacion", applicationController.deleteApplication);
 
+router.get('/check-postulacion/:id_publicacion', verifyToken, applicationController.checkApplicationStatus);
+
+// ✅ Nueva ruta para proyectos activos (trabajos)
+router.get('/mis-proyectos-activos', verifyToken, applicationController.getMyActiveProjects);
+
+
 // ============================================
 // RUTAS DE CV
 // ============================================

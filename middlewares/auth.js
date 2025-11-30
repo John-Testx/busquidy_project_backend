@@ -19,8 +19,11 @@ const verifyToken = (req, res, next) => {
       return res.status(401).json({ error: "Token no proporcionado" });
     }
 
+    // ✅ Decodifica el token JWT
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    
+    // ✅ Agrega la info del usuario al request
+    req.user = decoded; // Contiene: { id_usuario, tipo_usuario }
     req.isAuthenticated = true;
     
     next();

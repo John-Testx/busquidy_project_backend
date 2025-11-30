@@ -62,11 +62,11 @@ router.put("/update-credentials", verifyToken, updateCredentials);
 router.get("/", getAllUsers);
 router.get("/me", verifyToken, getUserInfo);
 router.get("/get/usuarios", getUsersWithData);
+router.get("/me", verifyToken, getUserInfo);
 router.get("/:id", getUserById);
 router.patch("/:id/status", updateUserStatus);
 router.patch("/:id", updateUserDetails);
 router.delete("/delete/:id_usuario", deleteUser);
-
 
 // ============= RUTAS DE AUTENTICACIÓN SOCIAL (OAuth) =============
 

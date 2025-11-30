@@ -2,40 +2,37 @@ const pool = require("../../db");
 const garantiaQueries = require("../../queries/payment/garantiaQueries");
 
 /**
- * Controlador de disputas y reembolsos
- */
-
-/**
- * Obtiene todos los proyectos con pagos en garantía
+ * Obtiene todos los proyectos con DISPUTAS ACTIVAS
  */
 const getDisputedProjects = async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT 
+        d.id_disputa,
+        d.motivo,
+        d.fecha_creacion as fecha_disputa,
+        d.estado as estado_disputa,
         p.id_proyecto,
         p.titulo,
-        p.descripcion,
         e.nombre_empresa,
         pg.monto_retenido,
         pg.estado as estado_pago,
-        pg.fecha_creacion as fecha_pago,
-        pp.estado_publicacion,
-        pg.id as id_garantia
-      FROM PagosEnGarantia pg
-      INNER JOIN proyecto p ON pg.id_proyecto = p.id_proyecto
-      INNER JOIN empresa e ON p.id_empresa = e.id_empresa
-      LEFT JOIN publicacion_proyecto pp ON p.id_proyecto = pp.id_proyecto
-      WHERE pg.estado IN ('RETENIDO', 'LIBERADO', 'REEMBOLSADO')
-      ORDER BY pg.fecha_creacion DESC
+        u1.correo as correo_cliente,
+        u2.correo as correo_freelancer
+      FROM disputa d
+      JOIN proyecto p ON d.id_proyecto = p.id_proyecto
+      JOIN empresa e ON p.id_empresa = e.id_empresa
+      JOIN usuario u1 ON d.id_usuario_reportante = u1.id_usuario
+      JOIN usuario u2 ON d.id_usuario_reportado = u2.id_usuario
+      LEFT JOIN PagosEnGarantia pg ON p.id_proyecto = pg.id_proyecto
+      WHERE d.estado IN ('pendiente', 'en_proceso')
+      ORDER BY d.fecha_creacion DESC
     `);
 
     res.json(rows);
   } catch (error) {
-    console.error("Error al obtener proyectos con disputas:", error);
-    res.status(500).json({ 
-      error: "Error al obtener proyectos",
-      mensaje: error.message 
-    });
+    console.error("Error al obtener disputas:", error);
+    res.status(500).json({ error: "Error al obtener disputas" });
   }
 };
 

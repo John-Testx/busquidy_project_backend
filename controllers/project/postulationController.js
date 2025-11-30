@@ -1,5 +1,6 @@
 const postulationQueries = require("../../queries/project/postulationQueries");
 const profileQueries = require("../../queries/freelancer/profileQueries");
+const db = require("../../db");
 
 /**
  * Controlador de postulaciones
@@ -172,36 +173,35 @@ const createPostulation = async (req, res) => {
  */
 const hireFreelancer = async (req, res) => {
   const { id_postulacion } = req.params;
-  const { id_usuario } = req.user; // Usuario empresa
+  const { id_usuario } = req.user; // Usuario empresa logueado
 
   let connection;
   try {
-    connection = await pool.getConnection();
+    // ✅ 2. USAR LA INSTANCIA 'db' IMPORTADA
+    connection = await db.getConnection(); 
     await connection.beginTransaction();
 
-    // ✅ 1. Obtener datos completos de la postulación
+    // 1. Consulta optimizada
     const [postulacionData] = await connection.query(
       `SELECT 
         po.id_postulacion,
         po.id_freelancer,
-        po.id_publicacion,
         po.estado_postulacion,
         f.id_usuario AS id_usuario_freelancer,
-        CONCAT(COALESCE(ap.nombres, ''), ' ', COALESCE(ap.apellidos, '')) AS nombre_freelancer,
-        u_freelancer.correo AS correo_freelancer,
-        pp.id_proyecto,
-        pr.nombre_proyecto AS titulo_proyecto,
+        u_free.correo AS correo_freelancer,
+        pr.id_proyecto,
+        pr.titulo AS titulo_proyecto,
+        pr.id_empresa,
         e.id_usuario AS id_usuario_empresa,
         e.nombre_empresa,
-        u_empresa.correo AS correo_empresa
+        CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_freelancer
        FROM postulacion po
-       INNER JOIN freelancer f ON po.id_freelancer = f.id_freelancer
+       JOIN freelancer f ON po.id_freelancer = f.id_freelancer
+       JOIN usuario u_free ON f.id_usuario = u_free.id_usuario
+       JOIN publicacion_proyecto pp ON po.id_publicacion = pp.id_publicacion
+       JOIN proyecto pr ON pp.id_proyecto = pr.id_proyecto
+       JOIN empresa e ON pr.id_empresa = e.id_empresa
        LEFT JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
-       INNER JOIN usuario u_freelancer ON f.id_usuario = u_freelancer.id_usuario
-       INNER JOIN publicacion_proyecto pp ON po.id_publicacion = pp.id_publicacion
-       INNER JOIN proyecto pr ON pp.id_proyecto = pr.id_proyecto
-       INNER JOIN empresa e ON pr.id_empresa = e.id_empresa
-       INNER JOIN usuario u_empresa ON e.id_usuario = u_empresa.id_usuario
        WHERE po.id_postulacion = ?`,
       [id_postulacion]
     );
@@ -212,12 +212,6 @@ const hireFreelancer = async (req, res) => {
     }
 
     const postulacion = postulacionData[0];
-
-    // ✅ 2. Verificar que el usuario sea el dueño del proyecto
-    if (postulacion.id_usuario_empresa !== id_usuario) {
-      await connection.rollback();
-      return res.status(403).json({ error: "No tienes permiso para contratar en este proyecto" });
-    }
 
     // ✅ 3. Verificar que la postulación no esté ya aceptada
     if (postulacion.estado_postulacion === 'aceptada' || postulacion.estado_postulacion === 'en proceso') {
@@ -295,7 +289,7 @@ const hireFreelancer = async (req, res) => {
       [
         postulacion.id_usuario_empresa,
         'freelancer_contratado',
-        `Has contratado a '${postulacion.nombre_freelancer}' para el proyecto '${postulacion.titulo_proyecto}'.`,
+        `Has contratado a '${postulacion.nombre_freelancer || 'Freelancer'}' para el proyecto '${postulacion.titulo_proyecto}'.`,
         `/chat/${id_conversation}`
       ]
     );
@@ -318,7 +312,7 @@ const hireFreelancer = async (req, res) => {
         // Notificar a la empresa
         io.to(`user_${postulacion.id_usuario_empresa}`).emit('new_notification', {
           tipo: 'freelancer_contratado',
-          mensaje: `Has contratado a '${postulacion.nombre_freelancer}'. Ya pueden chatear.`,
+          mensaje: `Has contratado a '${postulacion.nombre_freelancer || 'Freelancer'}'. Ya pueden chatear.`,
           enlace: `/chat/${id_conversation}`,
           fecha: new Date()
         });
@@ -328,16 +322,14 @@ const hireFreelancer = async (req, res) => {
     }
 
     res.json({ 
-      message: "Freelancer contratado exitosamente",
-      id_conversation,
-      nombre_freelancer: postulacion.nombre_freelancer,
-      titulo_proyecto: postulacion.titulo_proyecto
+        message: "Contratación exitosa. Chat habilitado.", 
+        id_conversation: id_conversation
     });
 
   } catch (error) {
     if (connection) await connection.rollback();
-    console.error("Error al contratar freelancer:", error);
-    res.status(500).json({ error: "Error al contratar al freelancer" });
+    console.error("Error al contratar:", error);
+    res.status(500).json({ error: "Error interno al procesar la contratación" });
   } finally {
     if (connection) connection.release();
   }

@@ -28,6 +28,16 @@ const {
   hireFreelancer,
 } = require("../controllers/project/postulationController");
 
+const { 
+  createDispute 
+} = require("../controllers/project/disputeController"); 
+
+const { 
+  addDeliverable, 
+  getDeliverables 
+} = require("../controllers/project/deliverableController");
+
+
 // ============= RUTAS DE PROYECTOS =============
 router.get("/getProjects", getAllProjects);
 router.get("/getProject/:id", getProjectById);
@@ -54,5 +64,12 @@ router.get("/publicacion/:id_publicacion/check-application", optionalAuth, check
 
 // Nueva ruta para crear postulación (requiere autenticación)
 router.post("/publicacion/:id_publicacion/postular", verifyToken, createPostulation);
+
+// ============= RUTA DE DISPUTA =============
+router.post("/dispute/:id_proyecto", verifyToken, createDispute);
+
+// ============= RUTAS DE ENTREGABLES (NUEVAS) =============
+router.post("/:id_proyecto/deliverables", verifyToken, addDeliverable);
+router.get("/:id_proyecto/deliverables", verifyToken, getDeliverables);
 
 module.exports = router;
