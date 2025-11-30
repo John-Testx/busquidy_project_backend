@@ -64,8 +64,8 @@ const getFreelancerPublicProfile = async (req, res) => {
     // Obtener datos completos del perfil público
     const profileData = await searchQueries.getPublicProfileData(id);
 
-    console.log("perfilFreelancerResults:", freelancer);
-    console.log("usuarioResults:", usuario);
+    // console.log("perfilFreelancerResults:", freelancer);
+    // console.log("usuarioResults:", usuario);
 
     // Consolidar los datos en una sola respuesta
     res.json({
