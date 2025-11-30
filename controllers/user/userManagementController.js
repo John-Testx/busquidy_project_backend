@@ -211,24 +211,47 @@ const updateCredentials = async (req, res) => {
 
 /**
  * GET /api/users/me
- * Obtiene la información del usuario autenticado
+ * Obtiene la información del usuario autenticado con datos FRESCOS de la BD
  */
 const getUserInfo = async (req, res) => {
   try {
-    const userId = req.user.id_usuario;
+    const userId = req.user.id_usuario; // viene del middleware verifyToken
     
-    const [user] = await pool.query(
-      "SELECT id_usuario, correo, tipo_usuario, estado_verificacion FROM usuario WHERE id_usuario = ?",
+    // ✅ Consultar DIRECTAMENTE la base de datos (datos frescos, no del token)
+    const [rows] = await pool.query(
+      `SELECT 
+        id_usuario, 
+        correo, 
+        tipo_usuario, 
+        estado_verificacion, 
+        is_active,
+        ultimo_login
+      FROM usuario 
+      WHERE id_usuario = ?`,
       [userId]
     );
 
-    if (user.length === 0) {
+    if (rows.length === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    res.json(user[0]);
+    const user = rows[0];
+
+    // ✅ Log para debugging
+    console.log(`📊 GET /users/me - Usuario ${userId} consultado - Estado: ${user.estado_verificacion}`);
+
+    // Devolver la información fresca del usuario
+    res.status(200).json({
+      id_usuario: user.id_usuario,
+      correo: user.correo,
+      tipo_usuario: user.tipo_usuario,
+      estado_verificacion: user.estado_verificacion, // ✅ Campo crítico para ProtectedRoute
+      is_active: user.is_active,
+      ultimo_login: user.ultimo_login
+    });
+
   } catch (error) {
-    console.error('Error en getUserInfo:', error);
+    console.error('❌ Error en getUserInfo:', error);
     res.status(500).json({ error: 'Error al obtener información del usuario' });
   }
 };
