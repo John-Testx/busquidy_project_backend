@@ -1,18 +1,19 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const contactRequestController = require("../controllers/contact/contactRequestController");
-const { verifyToken } = require("../middlewares/auth");
+const contactRequestController = require('../controllers/contact/contactRequestController');
+const { verifyToken } = require('../middlewares/auth');
 
-// Crear solicitud
-router.post("/", verifyToken, contactRequestController.crearSolicitud);
+// 1. Crear una nueva solicitud
+router.post('/', verifyToken, contactRequestController.createContactRequest);
 
-// Responder solicitud
-router.patch("/:id_solicitud/responder", verifyToken, contactRequestController.responderSolicitud);
+// 2. Obtener todas las solicitudes del usuario (Lista)
+router.get('/', verifyToken, contactRequestController.getContactRequests);
 
-// Obtener solicitudes del usuario
-router.get("/", verifyToken, contactRequestController.obtenerSolicitudes);
+// 3. Obtener UNA solicitud específica por ID (Detalle)
+router.get('/:id', verifyToken, contactRequestController.getContactRequestById);
 
-// ✅ NUEVA RUTA: Obtener detalles de una solicitud específica
-router.get("/:id_solicitud", verifyToken, contactRequestController.obtenerSolicitudPorId);
+// 4. ✅ ESTA ES LA RUTA QUE FALTA PARA EL ERROR 404
+// Responder a una solicitud (Aceptar/Rechazar)
+router.patch('/:id/respond/', verifyToken, contactRequestController.respondToRequest);
 
 module.exports = router;
