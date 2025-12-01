@@ -73,4 +73,74 @@ exports.getScheduledCalls = async (req, res) => {
         console.error('Error al obtener las entrevistas:', error);
         res.status(500).json({ message: 'Error interno del servidor' });
     }
+    exports.getUpcomingInterviews = async (req, res) => {
+    // Obtener el ID y el tipo de usuario desde el token de autenticación
+    const { id: userId, tipo_usuario } = req.user;
+
+    try {
+        let query;
+        let queryParams = [userId];
+
+        // 1. Obtener los IDs de entidad (id_empresa o id_freelancer) basados en el ID de usuario
+        let entityIdQuery = '';
+        if (tipo_usuario === 'empresa_juridico' || tipo_usuario === 'empresa_natural') {
+            entityIdQuery = 'SELECT id_empresa FROM empresa WHERE id_usuario = $1';
+            
+            // Si el usuario es una empresa, buscamos las entrevistas donde es el solicitante
+            query = `
+                SELECT 
+                    e.*, 
+                    u_free.correo as correo_freelancer,
+                    CONCAT(ap.nombres, ' ', ap.apellidos) AS nombre_contraparte
+                FROM 
+                    entrevistas e
+                JOIN 
+                    usuario u_free ON e.id_usuario_freelancer = u_free.id_usuario
+                JOIN
+                    freelancer f ON u_free.id_usuario = f.id_usuario
+                JOIN
+                    antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
+                WHERE 
+                    e.id_usuario_empresa = $1 AND e.estado = 'agendada'
+                    AND e.fecha_hora_inicio >= NOW() 
+                ORDER BY 
+                    e.fecha_hora_inicio ASC;
+            `;
+        } else if (tipo_usuario === 'freelancer') {
+            entityIdQuery = 'SELECT id_freelancer FROM freelancer WHERE id_usuario = $1';
+            
+            // Si el usuario es un freelancer, buscamos las entrevistas donde es el receptor
+            query = `
+                SELECT 
+                    e.*, 
+                    u_emp.correo as correo_empresa,
+                    emp.nombre_empresa AS nombre_contraparte
+                FROM 
+                    entrevistas e
+                JOIN 
+                    usuario u_emp ON e.id_usuario_empresa = u_emp.id_usuario
+                JOIN
+                    empresa emp ON u_emp.id_usuario = emp.id_usuario
+                WHERE 
+                    e.id_usuario_freelancer = $1 AND e.estado = 'agendada'
+                    AND e.fecha_hora_inicio >= NOW() 
+                ORDER BY 
+                    e.fecha_hora_inicio ASC;
+            `;
+        } else {
+            return res.status(403).json({ message: 'Tipo de usuario no autorizado.' });
+        }
+
+        // 2. Ejecutar la consulta principal de entrevistas
+        const { rows } = await db.query(query, queryParams);
+        
+        
+        // El frontend espera el campo 'nombre_contraparte' y 'room_id'
+        res.status(200).json(rows);
+
+    } catch (error) {
+        console.error('Error al obtener las próximas entrevistas:', error);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+};
 };

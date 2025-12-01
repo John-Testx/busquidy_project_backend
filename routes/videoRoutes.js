@@ -13,5 +13,6 @@ const videoController = require('../controllers/video/videocontroller.js');
 router.post('/schedule-call',  videoController.scheduleCall);
 router.get('/scheduled-calls',  videoController.getScheduledCalls);
 router.post('/create-room',  videoController.createInstantRoom);
+router.get('/entrevistas/proximas', protect, videoController.getUpcomingInterviews);
 
 module.exports = router;

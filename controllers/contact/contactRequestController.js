@@ -132,18 +132,16 @@ exports.getContactRequestById = async (req, res) => {
 // 4. Responder Solicitud
 exports.respondToRequest = async (req, res) => {
     const { id } = req.params; 
-    let { estado } = req.body; 
+    let { estado } = req.body; // Solo necesitamos el 'estado' (aceptada/rechazada)
     const id_usuario = req.user.id_usuario;
 
-    console.log("Datos recibidos (RAW):", JSON.stringify(req.body, null, 2));
+    // ... (Pasos de validación del estado y normalización, se mantienen igual) ...
 
     // 1. EXTRACCIÓN INTELIGENTE DEL ESTADO
-    // Si 'estado' es un objeto (ej: { respuesta: 'aceptada', nueva_fecha: ... }), extraemos la propiedad 'respuesta'
     if (estado && typeof estado === 'object') {
         if (estado.respuesta) {
             estado = estado.respuesta;
         } else if (estado.estado) {
-            // Por si acaso viene como { estado: { estado: 'aceptada' } }
             estado = estado.estado;
         }
     }
@@ -152,7 +150,6 @@ exports.respondToRequest = async (req, res) => {
     if (estado && typeof estado === 'string') {
         estado = estado.trim().toLowerCase();
     } else {
-        // Si después de intentar extraer sigue sin ser string, es un error
         return res.status(400).json({ error: "Formato de estado inválido. Se espera una cadena de texto." });
     }
 
@@ -161,37 +158,87 @@ exports.respondToRequest = async (req, res) => {
         return res.status(400).json({ error: `Estado inválido: '${estado}'. Valores permitidos: 'aceptada', 'rechazada'.` });
     }
 
+    // NOTA: Eliminamos la validación extra de 'fecha_entrevista' porque ya no se espera.
+
     let connection;
     try {
         connection = await pool.getConnection();
+        await connection.beginTransaction(); // Iniciar transacción
 
         // 4. Verificar permisos y existencia
         const [solicitud] = await connection.query(
-            'SELECT * FROM solicitudes_contacto WHERE id_solicitud = ? AND id_receptor = ?',
+            // CRÍTICO: Recuperamos la fecha sugerida de la base de datos
+            'SELECT id_solicitud, id_postulacion, id_solicitante, id_receptor, fecha_entrevista_sugerida FROM solicitudes_contacto WHERE id_solicitud = ? AND id_receptor = ?',
             [id, id_usuario]
         );
 
         if (solicitud.length === 0) {
-            connection.release();
+            await connection.rollback();
             return res.status(404).json({ error: 'Solicitud no encontrada o no tienes permiso.' });
         }
+        
+        const data = solicitud[0];
+        // CRÍTICO: Definimos la fecha de la entrevista como la fecha sugerida
+        const fechaParaEntrevista = data.fecha_entrevista_sugerida;
 
-        // 5. Actualizar en BD
+        // Validar que la fecha sugerida exista si se acepta
+        if (estado === 'aceptada' && !fechaParaEntrevista) {
+             await connection.rollback();
+             return res.status(400).json({ error: 'La solicitud aceptada requiere una fecha sugerida existente.' });
+        }
+
+        // 5. Actualizar la solicitud de contacto
         await connection.query(
             'UPDATE solicitudes_contacto SET estado_solicitud = ? WHERE id_solicitud = ?',
             [estado, id]
         );
 
-        // Notificar (opcional, no bloqueante)
-        try {
-             // await notificarRespuestaSolicitud(...)
-        } catch (e) { console.error("Error notificando:", e); }
+        // 6. CREACIÓN DE LA ENTREVISTA
+        if (estado === 'aceptada') {
+            
+            const id_usuario_empresa = data.id_solicitante;
+            const id_usuario_freelancer = data.id_receptor; 
 
-        res.json({ message: `Solicitud ${estado} exitosamente` });
+            // Generar un Room ID único
+            const room_id = `room-${id}-${Date.now()}`; 
+
+            // Insertar la nueva entrevista usando fechaParaEntrevista (que es la sugerida)
+            await connection.query(
+                `INSERT INTO entrevistas (
+                    id_solicitud, 
+                    id_usuario_empresa, 
+                    id_usuario_freelancer, 
+                    room_id, 
+                    fecha_hora_inicio
+                ) VALUES (?, ?, ?, ?, ?)`,
+                [
+                    data.id_solicitud, 
+                    id_usuario_empresa, 
+                    id_usuario_freelancer, 
+                    room_id, 
+                    fechaParaEntrevista // Usamos la fecha_entrevista_sugerida
+                ]
+            );
+        }
+
+        // 7. Commit la transacción
+        await connection.commit();
+
+        res.json({ 
+            message: `Solicitud ${estado} exitosamente`,
+            ...(estado === 'aceptada' && { 
+                entrevista_creada: true, 
+                fecha_agendada: fechaParaEntrevista,
+                room_id: room_id
+            })
+        });
 
     } catch (error) {
+        if (connection) {
+            await connection.rollback(); 
+        }
         console.error('Error respondToRequest:', error);
-        res.status(500).json({ error: 'Error interno al procesar la respuesta' });
+        res.status(500).json({ error: 'Error interno al procesar la respuesta o crear la entrevista' });
     } finally {
         if (connection) connection.release();
     }
