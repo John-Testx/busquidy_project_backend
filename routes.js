@@ -15,6 +15,7 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const contactRequestRoutes = require("./routes/contactRequestRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const verificationRoutes = require('./routes/verificationRoutes');
+const videoRoutes = require('./routes/videoRoutes');
 
 
 router.use("/support", supportRoutes);
@@ -30,6 +31,7 @@ router.use("/notifications", notificationRoutes )
 router.use("/contact-requests", contactRequestRoutes );
 router.use("/subscriptions", subscriptionRoutes);
 router.use('/verification', verificationRoutes);
+router.use("/video", videoRoutes);
 
 
 

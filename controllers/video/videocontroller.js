@@ -1,7 +1,7 @@
-const db = require('../db');
+const pool = require("../../db");
 const { v4: uuidV4 } = require('uuid');
 
-exports.scheduleCall = async (req, res) => {
+const scheduleCall = async (req, res) => {
     // El ID del usuario que agenda (de la empresa) se obtiene del token
     const id_usuario_empresa = req.user.id; 
     const { tipo_usuario } = req.user; // ✅ Obtenemos el tipo de usuario
@@ -22,7 +22,7 @@ exports.scheduleCall = async (req, res) => {
     try {
         // 1. Obtener id_empresa y id_freelancer desde la postulación
         const postulacionQuery = 'SELECT p.id_freelancer, proy.id_empresa FROM postulacion p JOIN publicacion_proyecto pp ON p.id_publicacion = pp.id_publicacion JOIN proyecto proy ON pp.id_proyecto = proy.id_proyecto WHERE p.id_postulacion = $1';
-        const { rows: postRows } = await db.query(postulacionQuery, [id_postulacion]);
+        const { rows: postRows } = await pool.query(postulacionQuery, [id_postulacion]);
 
         if (postRows.length === 0) {
             return res.status(404).json({ message: 'Postulación no encontrada.' });
@@ -38,7 +38,7 @@ exports.scheduleCall = async (req, res) => {
             RETURNING *;
         `;
         const values = [id_postulacion, id_empresa, id_freelancer, title, roomId, scheduled_at];
-        const { rows } = await db.query(insertQuery, values);
+        const { rows } = await pool.query(insertQuery, values);
         
         // Aquí podrías agregar lógica para notificar al freelancer
         
@@ -49,7 +49,7 @@ exports.scheduleCall = async (req, res) => {
     }
 };
 
-exports.getScheduledCalls = async (req, res) => {
+const getScheduledCalls = async (req, res) => {
     // Obtener el ID y el tipo de usuario desde el token de autenticación
     const { id: userId, tipo_usuario } = req.user;
 
@@ -67,13 +67,15 @@ exports.getScheduledCalls = async (req, res) => {
             return res.status(403).json({ message: 'Tipo de usuario no autorizado.' });
         }
 
-        const { rows } = await db.query(query, [userId]);
+        const { rows } = await pool.query(query, [userId]);
         res.status(200).json(rows);
     } catch (error) {
         console.error('Error al obtener las entrevistas:', error);
         res.status(500).json({ message: 'Error interno del servidor' });
     }
-    exports.getUpcomingInterviews = async (req, res) => {
+};
+
+const getUpcomingInterviews = async (req, res) => {
     // Obtener el ID y el tipo de usuario desde el token de autenticación
     const { id: userId, tipo_usuario } = req.user;
 
@@ -84,7 +86,7 @@ exports.getScheduledCalls = async (req, res) => {
         // 1. Obtener los IDs de entidad (id_empresa o id_freelancer) basados en el ID de usuario
         let entityIdQuery = '';
         if (tipo_usuario === 'empresa_juridico' || tipo_usuario === 'empresa_natural') {
-            entityIdQuery = 'SELECT id_empresa FROM empresa WHERE id_usuario = $1';
+            entityIdQuery = 'SELECT id_empresa FROM empresa WHERE id_usuario = ?';
             
             // Si el usuario es una empresa, buscamos las entrevistas donde es el solicitante
             query = `
@@ -101,13 +103,13 @@ exports.getScheduledCalls = async (req, res) => {
                 JOIN
                     antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
                 WHERE 
-                    e.id_usuario_empresa = $1 AND e.estado = 'agendada'
+                    e.id_usuario_empresa = ? AND e.estado = 'agendada'
                     AND e.fecha_hora_inicio >= NOW() 
                 ORDER BY 
                     e.fecha_hora_inicio ASC;
             `;
         } else if (tipo_usuario === 'freelancer') {
-            entityIdQuery = 'SELECT id_freelancer FROM freelancer WHERE id_usuario = $1';
+            entityIdQuery = 'SELECT id_freelancer FROM freelancer WHERE id_usuario = ?';
             
             // Si el usuario es un freelancer, buscamos las entrevistas donde es el receptor
             query = `
@@ -122,7 +124,7 @@ exports.getScheduledCalls = async (req, res) => {
                 JOIN
                     empresa emp ON u_emp.id_usuario = emp.id_usuario
                 WHERE 
-                    e.id_usuario_freelancer = $1 AND e.estado = 'agendada'
+                    e.id_usuario_freelancer = ? AND e.estado = 'agendada'
                     AND e.fecha_hora_inicio >= NOW() 
                 ORDER BY 
                     e.fecha_hora_inicio ASC;
@@ -132,7 +134,7 @@ exports.getScheduledCalls = async (req, res) => {
         }
 
         // 2. Ejecutar la consulta principal de entrevistas
-        const { rows } = await db.query(query, queryParams);
+        const { rows } = await pool.query(query, queryParams);
         
         
         // El frontend espera el campo 'nombre_contraparte' y 'room_id'
@@ -143,4 +145,10 @@ exports.getScheduledCalls = async (req, res) => {
         res.status(500).json({ message: 'Error interno del servidor.' });
     }
 };
+
+
+module.exports = { 
+    scheduleCall, 
+    getUpcomingInterviews,
+    getScheduledCalls 
 };

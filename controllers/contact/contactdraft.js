@@ -1,5 +1,5 @@
 const pool = require('../../db');
-// const { notificarSolicitudContacto } = require('../../services/notificationService'); 
+// 1. UPDATED IMPORTS: Added specific notification functions
 const { 
     notificarSolicitudContacto,
     notificarSolicitudChatAceptada,
@@ -7,8 +7,7 @@ const {
     notificarSolicitudEntrevistaAceptada,
     notificarSolicitudEntrevistaRechazada,
     notificarSolicitudEntrevistaReprogramar
-} = require('../../services/notificationService');
-
+} = require('../../services/notificationService'); 
 
 // 1. Crear solicitud
 exports.createContactRequest = async (req, res) => {
@@ -79,7 +78,6 @@ exports.createContactRequest = async (req, res) => {
 exports.getContactRequests = async (req, res) => {
     const id_usuario = req.user.id_usuario;
     try {
-        // Consulta corregida: Usa LEFT JOIN con empresa y COALESCE para evitar error de columna inexistente
         const query = `
             SELECT sc.*, 
                    COALESCE(e.nombre_empresa, 'Usuario') as nombre_solicitante, 
@@ -102,14 +100,12 @@ exports.getContactRequests = async (req, res) => {
     }
 };
 
-// 3. Obtener UNA solicitud por ID (Detalle) - AQUÍ ESTABA EL ERROR
+// 3. Obtener UNA solicitud por ID (Detalle)
 exports.getContactRequestById = async (req, res) => {
     const { id } = req.params;
     const id_usuario = req.user.id_usuario;
 
     try {
-        // CORRECCIÓN CRÍTICA: Eliminamos 'u_sol.nombre_completo' que causaba el error.
-        // Usamos COALESCE para buscar el nombre en la tabla 'empresa' o usar el correo como respaldo.
         const query = `
             SELECT sc.*, 
                    COALESCE(e.nombre_empresa, u_sol.correo) as nombre_solicitante, 
@@ -133,7 +129,6 @@ exports.getContactRequestById = async (req, res) => {
         res.json(request[0]);
     } catch (error) {
         console.error('Error getContactRequestById:', error);
-        // Si ves este mensaje en el frontend, es un error de SQL nuevo
         res.status(500).json({ error: 'Error interno de base de datos al leer la solicitud' });
     }
 };
