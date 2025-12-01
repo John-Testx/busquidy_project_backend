@@ -1,14 +1,15 @@
 const pool = require('../../db');
-// const { notificarSolicitudContacto } = require('../../services/notificationService'); 
+// ✅ CORRECCIÓN: Importamos las funciones específicas que SÍ existen en tu servicio
 const { 
     notificarSolicitudContacto,
     notificarSolicitudChatAceptada,
     notificarSolicitudChatRechazada,
     notificarSolicitudEntrevistaAceptada,
     notificarSolicitudEntrevistaRechazada,
-    notificarSolicitudEntrevistaReprogramar
+    notificarSolicitudEntrevistaReprogramar,
+    notificarSolicitudChatRecibida,      // Asegúrate de tener estos importados
+    notificarSolicitudEntrevistaRecibida // Asegúrate de tener estos importados
 } = require('../../services/notificationService');
-
 
 // 1. Crear solicitud
 exports.createContactRequest = async (req, res) => {
@@ -23,20 +24,27 @@ exports.createContactRequest = async (req, res) => {
     try {
         connection = await pool.getConnection();
         
-        // Obtener ID del freelancer receptor
-        const [postulacion] = await connection.query(
-            'SELECT id_freelancer FROM postulacion WHERE id_postulacion = ?', 
+        // ✅ CORRECCIÓN DE QUERY: Obtenemos también el TÍTULO del proyecto para la notificación
+        const [postulacionData] = await connection.query(
+            `SELECT p.id_freelancer, proy.titulo as titulo_proyecto 
+             FROM postulacion p 
+             JOIN publicacion_proyecto pp ON p.id_publicacion = pp.id_publicacion
+             JOIN proyecto proy ON pp.id_proyecto = proy.id_proyecto
+             WHERE p.id_postulacion = ?`, 
             [id_postulacion]
         );
 
-        if (postulacion.length === 0) {
+        if (postulacionData.length === 0) {
             connection.release();
             return res.status(404).json({ error: 'Postulación no encontrada' });
         }
 
+        const id_freelancer = postulacionData[0].id_freelancer;
+        const tituloProyecto = postulacionData[0].titulo_proyecto; // Dato necesario para notificar
+
         const [freelancer] = await connection.query(
             'SELECT id_usuario FROM freelancer WHERE id_freelancer = ?',
-            [postulacion[0].id_freelancer]
+            [id_freelancer]
         );
 
         if (freelancer.length === 0) {
@@ -54,13 +62,28 @@ exports.createContactRequest = async (req, res) => {
             [id_postulacion, id_solicitante, id_receptor, tipo_solicitud, mensaje_solicitud, fecha_entrevista_sugerida]
         );
 
-        // Intentar notificar
+        // ✅ LÓGICA DE NOTIFICACIÓN CORREGIDA
         try {
-            if (notificarSolicitudContacto) {
-                const [empresaInfo] = await connection.query("SELECT nombre_empresa FROM empresa WHERE id_usuario = ?", [id_solicitante]);
-                const nombreSolicitante = empresaInfo.length > 0 ? empresaInfo[0].nombre_empresa : 'Una empresa';
-                await notificarSolicitudContacto(id_receptor, nombreSolicitante, tipo_solicitud);
+            const [empresaInfo] = await connection.query("SELECT nombre_empresa FROM empresa WHERE id_usuario = ?", [id_solicitante]);
+            const nombreSolicitante = empresaInfo.length > 0 ? empresaInfo[0].nombre_empresa : 'Una empresa';
+            
+            // Usamos las funciones específicas según el tipo
+            if (tipo_solicitud === 'chat') {
+                // notificarSolicitudChatRecibida(id_receptor, nombre_empresa, id_solicitud)
+                await notificarSolicitudChatRecibida(id_receptor, nombreSolicitante, result.insertId);
+            } else if (tipo_solicitud === 'entrevista') {
+                // notificarSolicitudEntrevistaRecibida(id_receptor, nombre_empresa, nombre_proyecto, fecha, id_solicitud)
+                await notificarSolicitudEntrevistaRecibida(
+                    id_receptor, 
+                    nombreSolicitante, 
+                    tituloProyecto, 
+                    fecha_entrevista_sugerida, 
+                    result.insertId
+                );
             }
+            
+            console.log(`🔔 Notificación de solicitud ${tipo_solicitud} enviada al usuario ${id_receptor}`);
+
         } catch (notifError) {
             console.error('Advertencia notificación:', notifError.message);
         }
@@ -79,7 +102,6 @@ exports.createContactRequest = async (req, res) => {
 exports.getContactRequests = async (req, res) => {
     const id_usuario = req.user.id_usuario;
     try {
-        // Consulta corregida: Usa LEFT JOIN con empresa y COALESCE para evitar error de columna inexistente
         const query = `
             SELECT sc.*, 
                    COALESCE(e.nombre_empresa, 'Usuario') as nombre_solicitante, 
@@ -102,14 +124,12 @@ exports.getContactRequests = async (req, res) => {
     }
 };
 
-// 3. Obtener UNA solicitud por ID (Detalle) - AQUÍ ESTABA EL ERROR
+// 3. Obtener UNA solicitud por ID (Detalle)
 exports.getContactRequestById = async (req, res) => {
     const { id } = req.params;
     const id_usuario = req.user.id_usuario;
 
     try {
-        // CORRECCIÓN CRÍTICA: Eliminamos 'u_sol.nombre_completo' que causaba el error.
-        // Usamos COALESCE para buscar el nombre en la tabla 'empresa' o usar el correo como respaldo.
         const query = `
             SELECT sc.*, 
                    COALESCE(e.nombre_empresa, u_sol.correo) as nombre_solicitante, 
@@ -133,36 +153,29 @@ exports.getContactRequestById = async (req, res) => {
         res.json(request[0]);
     } catch (error) {
         console.error('Error getContactRequestById:', error);
-        // Si ves este mensaje en el frontend, es un error de SQL nuevo
         res.status(500).json({ error: 'Error interno de base de datos al leer la solicitud' });
     }
 };
 
-// 4. Responder Solicitud (CON NOTIFICACIONES RESTAURADAS)
+// 4. Responder Solicitud (Aceptar/Rechazar/Reprogramar)
 exports.respondToRequest = async (req, res) => {
     const { id } = req.params; 
-    let { estado, nueva_fecha } = req.body; // Added nueva_fecha for rescheduling
+    let { estado, nueva_fecha } = req.body; 
     const id_usuario = req.user.id_usuario;
 
-    // 1. EXTRACCIÓN INTELIGENTE DEL ESTADO
     if (estado && typeof estado === 'object') {
-        if (estado.respuesta) {
-            estado = estado.respuesta;
-        } else if (estado.estado) {
-            estado = estado.estado;
-        }
+        if (estado.respuesta) estado = estado.respuesta;
+        else if (estado.estado) estado = estado.estado;
     }
 
-    // 2. Normalización
     if (estado && typeof estado === 'string') {
         estado = estado.trim().toLowerCase();
     } else {
-        return res.status(400).json({ error: "Formato de estado inválido. Se espera una cadena de texto." });
+        return res.status(400).json({ error: "Formato de estado inválido." });
     }
 
-    // 3. Validación de valores permitidos (ADDED 'reprogramar')
     if (!['aceptada', 'rechazada', 'reprogramar'].includes(estado)) {
-        return res.status(400).json({ error: `Estado inválido: '${estado}'. Valores permitidos: 'aceptada', 'rechazada', 'reprogramar'.` });
+        return res.status(400).json({ error: `Estado inválido: '${estado}'.` });
     }
 
     let connection;
@@ -170,10 +183,21 @@ exports.respondToRequest = async (req, res) => {
         connection = await pool.getConnection();
         await connection.beginTransaction(); 
 
-        // 4. Verificar permisos y existencia
-        // UPDATED: Added tipo_solicitud to select
+        // ✅ Obtenemos también id_proyecto para la notificación
         const [solicitud] = await connection.query(
-            'SELECT id_solicitud, id_postulacion, id_solicitante, id_receptor, fecha_entrevista_sugerida, tipo_solicitud FROM solicitudes_contacto WHERE id_solicitud = ? AND id_receptor = ?',
+            `SELECT 
+                sc.id_solicitud, 
+                sc.id_postulacion, 
+                sc.id_solicitante, 
+                sc.id_receptor, 
+                sc.fecha_entrevista_sugerida, 
+                sc.tipo_solicitud,
+                p.id_proyecto
+             FROM solicitudes_contacto sc
+             JOIN postulacion pos ON sc.id_postulacion = pos.id_postulacion
+             JOIN publicacion_proyecto pub ON pos.id_publicacion = pub.id_publicacion
+             JOIN proyecto p ON pub.id_proyecto = p.id_proyecto
+             WHERE sc.id_solicitud = ? AND sc.id_receptor = ?`,
             [id, id_usuario]
         );
 
@@ -183,47 +207,52 @@ exports.respondToRequest = async (req, res) => {
         }
         
         const data = solicitud[0];
-        // Determinar fecha final (si es reprogramar, usar la nueva, si no, la sugerida original)
         const fechaParaEntrevista = (estado === 'reprogramar' && nueva_fecha) ? nueva_fecha : data.fecha_entrevista_sugerida;
 
-        // Validar que la fecha sugerida exista si se acepta
-        if (estado === 'aceptada' && !fechaParaEntrevista) {
+        // ✅ CORRECCIÓN: Validar fecha SOLO SI es entrevista
+        if (estado === 'aceptada' && data.tipo_solicitud === 'entrevista' && !fechaParaEntrevista) {
              await connection.rollback();
-             return res.status(400).json({ error: 'La solicitud aceptada requiere una fecha sugerida existente.' });
+             return res.status(400).json({ error: 'La solicitud de entrevista aceptada requiere una fecha sugerida existente.' });
         }
 
-        // 5. Actualizar la solicitud de contacto
-        // UPDATED: Updates fecha_entrevista_sugerida if changed/rescheduled
+        // Actualizar solicitud
         await connection.query(
             'UPDATE solicitudes_contacto SET estado_solicitud = ?, fecha_entrevista_sugerida = ? WHERE id_solicitud = ?',
             [estado, fechaParaEntrevista, id]
         );
 
-        // 6. CREACIÓN DE LA ENTREVISTA (Solo si es Aceptada)
+        // ✅ LÓGICA DIFERENCIADA: Entrevista vs Chat
         let room_id = null;
         if (estado === 'aceptada') {
-            const id_usuario_empresa = data.id_solicitante;
-            const id_usuario_freelancer = data.id_receptor; 
+            if (data.tipo_solicitud === 'entrevista') {
+                // Crear registro de entrevista
+                const id_usuario_empresa = data.id_solicitante;
+                const id_usuario_freelancer = data.id_receptor; 
+                room_id = `room-${id}-${Date.now()}`; 
 
-            room_id = `room-${id}-${Date.now()}`; 
-
-            await connection.query(
-                `INSERT INTO entrevistas (
-                    id_solicitud, 
-                    id_usuario_empresa, 
-                    id_usuario_freelancer, 
-                    room_id, 
-                    fecha_hora_inicio
-                ) VALUES (?, ?, ?, ?, ?)`,
-                [data.id_solicitud, id_usuario_empresa, id_usuario_freelancer, room_id, fechaParaEntrevista]
-            );
+                await connection.query(
+                    `INSERT INTO entrevistas (id_solicitud, id_usuario_empresa, id_usuario_freelancer, room_id, fecha_hora_inicio) 
+                     VALUES (?, ?, ?, ?, ?)`,
+                    [data.id_solicitud, id_usuario_empresa, id_usuario_freelancer, room_id, fechaParaEntrevista]
+                );
+            } else if (data.tipo_solicitud === 'chat') {
+                // Asegurar que exista la conversación
+                const [user1, user2] = [data.id_solicitante, data.id_receptor].sort((a, b) => a - b);
+                const [existingConv] = await connection.query(
+                    "SELECT id_conversation FROM conversations WHERE id_user_one = ? AND id_user_two = ?",
+                    [user1, user2]
+                );
+                
+                if (existingConv.length === 0) {
+                    await connection.query(
+                        "INSERT INTO conversations (id_user_one, id_user_two, created_at) VALUES (?, ?, NOW())",
+                        [user1, user2]
+                    );
+                }
+            }
         }
 
-        // ==========================================
-        // 7. LÓGICA DE NOTIFICACIONES RESTAURADA
-        // ==========================================
-        
-        // Obtener nombre del freelancer (usuario actual) para la notificación
+        // --- NOTIFICACIONES ---
         const [userData] = await connection.query(
             `SELECT CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_freelancer 
              FROM freelancer f 
@@ -234,17 +263,17 @@ exports.respondToRequest = async (req, res) => {
         const nombreFreelancer = userData.length > 0 ? userData[0].nombre_freelancer : 'El Freelancer';
         const idUsuarioEmpresa = data.id_solicitante;
 
-        // DB Notification Logic
+        // DB Notifications
         if (data.tipo_solicitud === 'chat') {
             if (estado === 'aceptada') {
-                // Si hay logica de crear conversation chat ID, iría aquí, pasamos null por ahora si no se genera aqui
                 await notificarSolicitudChatAceptada(idUsuarioEmpresa, nombreFreelancer, null, connection);
             } else if (estado === 'rechazada') {
                 await notificarSolicitudChatRechazada(idUsuarioEmpresa, nombreFreelancer, connection);
             }
         } else if (data.tipo_solicitud === 'entrevista') {
             if (estado === 'aceptada') {
-                await notificarSolicitudEntrevistaAceptada(idUsuarioEmpresa, nombreFreelancer, null, connection);
+                // ✅ Pasamos el id_proyecto recuperado
+                await notificarSolicitudEntrevistaAceptada(idUsuarioEmpresa, nombreFreelancer, null, data.id_proyecto, connection);
             } else if (estado === 'rechazada') {
                 await notificarSolicitudEntrevistaRechazada(idUsuarioEmpresa, nombreFreelancer, connection);
             } else if (estado === 'reprogramar') {
@@ -252,7 +281,7 @@ exports.respondToRequest = async (req, res) => {
             }
         }
 
-        // Socket.IO Logic
+        // Socket.IO Notifications
         try {
             const io = req.app.get('socketio');
             if (io) {
@@ -273,7 +302,7 @@ exports.respondToRequest = async (req, res) => {
                     if (estado === 'aceptada') {
                         tipoNotificacion = 'solicitud_entrevista_aceptada';
                         mensajeNotificacion = `'${nombreFreelancer}' aceptó tu invitación a la entrevista.`;
-                        enlaceNotificacion = `/solicitudes/${id}`;
+                        enlaceNotificacion = `/empresa/proyectos/${data.id_proyecto}`; 
                     } else if (estado === 'rechazada') {
                         tipoNotificacion = 'solicitud_entrevista_rechazada';
                         mensajeNotificacion = `'${nombreFreelancer}' rechazó tu invitación a la entrevista.`;
@@ -297,12 +326,11 @@ exports.respondToRequest = async (req, res) => {
             console.error("⚠️ Error al emitir notificación por socket:", socketError);
         }
 
-        // 8. Commit la transacción
         await connection.commit();
 
         res.json({ 
             message: `Solicitud ${estado} exitosamente`,
-            ...(estado === 'aceptada' && { 
+            ...(estado === 'aceptada' && data.tipo_solicitud === 'entrevista' && { 
                 entrevista_creada: true, 
                 fecha_agendada: fechaParaEntrevista,
                 room_id: room_id
@@ -310,11 +338,9 @@ exports.respondToRequest = async (req, res) => {
         });
 
     } catch (error) {
-        if (connection) {
-            await connection.rollback(); 
-        }
+        if (connection) await connection.rollback(); 
         console.error('Error respondToRequest:', error);
-        res.status(500).json({ error: 'Error interno al procesar la respuesta o crear la entrevista' });
+        res.status(500).json({ error: 'Error interno al procesar la respuesta' });
     } finally {
         if (connection) connection.release();
     }

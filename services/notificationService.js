@@ -204,12 +204,13 @@ const notificarSolicitudChatRechazada = async (id_empresa_usuario, nombre_freela
 /**
  * Notificar a la empresa que el freelancer aceptó la solicitud de entrevista
  */
-const notificarSolicitudEntrevistaAceptada = async (id_empresa_usuario, nombre_freelancer, id_entrevista, connection = null) => {
+const notificarSolicitudEntrevistaAceptada = async (id_empresa_usuario, nombre_freelancer, id_entrevista, id_proyecto, connection = null) => {
   return await crearNotificacion({
     id_usuario_receptor: id_empresa_usuario,
     tipo_notificacion: "solicitud_entrevista_aceptada",
     mensaje: `'${nombre_freelancer}' aceptó tu invitación a la entrevista.`,
-    enlace: `/empresa/proyectos/${id_proyecto}` 
+    // Ahora usamos el parámetro id_proyecto que sí está definido
+    enlace: id_proyecto ? `/empresa/proyectos/${id_proyecto}` : '/empresa/proyectos' 
   }, connection);
 };
 
