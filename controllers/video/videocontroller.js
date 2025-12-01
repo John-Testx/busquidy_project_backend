@@ -77,18 +77,19 @@ const getScheduledCalls = async (req, res) => {
 
 const getUpcomingInterviews = async (req, res) => {
     // Obtener el ID y el tipo de usuario desde el token de autenticación
-    const { id: userId, tipo_usuario } = req.user;
+    // Asegúrate de que tu middleware de auth (verifyToken) esté inyectando id_usuario correctamente en req.user
+    const { id_usuario, tipo_usuario } = req.user;
+    
+    console.log('Usuario solicitando próximas entrevistas:', req.user);
 
     try {
         let query;
-        let queryParams = [userId];
+        let queryParams = [id_usuario];
 
-        // 1. Obtener los IDs de entidad (id_empresa o id_freelancer) basados en el ID de usuario
-        let entityIdQuery = '';
+        // Definir la consulta según el tipo de usuario
         if (tipo_usuario === 'empresa_juridico' || tipo_usuario === 'empresa_natural') {
-            entityIdQuery = 'SELECT id_empresa FROM empresa WHERE id_usuario = ?';
             
-            // Si el usuario es una empresa, buscamos las entrevistas donde es el solicitante
+            // Si el usuario es una empresa, buscamos las entrevistas donde es el solicitante (id_usuario_empresa)
             query = `
                 SELECT 
                     e.*, 
@@ -103,15 +104,15 @@ const getUpcomingInterviews = async (req, res) => {
                 JOIN
                     antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
                 WHERE 
-                    e.id_usuario_empresa = ? AND e.estado = 'agendada'
+                    e.id_usuario_empresa = ? 
+                    AND e.estado = 'agendada'
                     AND e.fecha_hora_inicio >= NOW() 
                 ORDER BY 
                     e.fecha_hora_inicio ASC;
             `;
         } else if (tipo_usuario === 'freelancer') {
-            entityIdQuery = 'SELECT id_freelancer FROM freelancer WHERE id_usuario = ?';
             
-            // Si el usuario es un freelancer, buscamos las entrevistas donde es el receptor
+            // Si el usuario es un freelancer, buscamos las entrevistas donde es el receptor (id_usuario_freelancer)
             query = `
                 SELECT 
                     e.*, 
@@ -124,7 +125,8 @@ const getUpcomingInterviews = async (req, res) => {
                 JOIN
                     empresa emp ON u_emp.id_usuario = emp.id_usuario
                 WHERE 
-                    e.id_usuario_freelancer = ? AND e.estado = 'agendada'
+                    e.id_usuario_freelancer = ? 
+                    AND e.estado = 'agendada'
                     AND e.fecha_hora_inicio >= NOW() 
                 ORDER BY 
                     e.fecha_hora_inicio ASC;
@@ -134,10 +136,11 @@ const getUpcomingInterviews = async (req, res) => {
         }
 
         // 2. Ejecutar la consulta principal de entrevistas
-        const { rows } = await pool.query(query, queryParams);
+        // ✅ CORRECCIÓN: Usar [rows] para mysql2 en lugar de { rows }
+        const [rows] = await pool.query(query, queryParams);
         
+        console.log('Próximas entrevistas obtenidas:', rows);
         
-        // El frontend espera el campo 'nombre_contraparte' y 'room_id'
         res.status(200).json(rows);
 
     } catch (error) {
