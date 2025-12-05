@@ -3,12 +3,15 @@ const publicationQueries = require("../../queries/project/publicationQueries");
 const { getEmpresaByUserId } = require("../../queries/empresa/empresaQueries.js");
 const {getUserById} = require("../../queries/user/userQueries");
 const pool = require("../../db");
+const { generatePDF } = require("../../services/pdfService");
 
 const { 
     notificarPostulacionRecibida, 
     notificarNuevaPostulacion,
     notificarPostulacionAceptada,
-    notificarPostulacionRechazada
+    notificarPostulacionRechazada,
+    notificarPagoLiberado,
+    notificarBoletaRequerida
 } = require("../../services/notificationService");
 const { getPostulacionData } = require("../../queries/notification/notificationHelperQueries");
 // ✅ --- NUEVO IMPORT DEL GUARDIÁN ---
@@ -290,120 +293,175 @@ const getProjectsByUser = async (req, res) => {
  */
 const releaseProjectPayment = async (req, res) => {
   const { id_proyecto } = req.params;
-  const id_usuario = req.user.id_usuario; // Del middleware verifyToken
+  const id_usuario_solicitante = req.user.id_usuario;
 
-  console.log('🔍 Liberando pago - Usuario:', id_usuario, 'Proyecto:', id_proyecto);
+  console.log('🔍 Iniciando liberación de fondos. Proyecto:', id_proyecto);
 
   let connection;
-
   try {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // 1. Verificar que el proyecto existe y obtener el id_empresa
-    const [projectRows] = await connection.query(
-      `SELECT p.*, p.id_empresa 
-       FROM proyecto p
-       WHERE p.id_proyecto = ?`,
-      [id_proyecto]
-    );
+    // 1. Obtener datos completos del proyecto, empresa y tipo de usuario
+    const [projectData] = await connection.query(`
+      SELECT p.*, e.id_empresa, e.nombre_empresa, u.tipo_usuario, u.id_usuario as id_dueno_empresa
+      FROM proyecto p
+      JOIN empresa e ON p.id_empresa = e.id_empresa
+      JOIN usuario u ON e.id_usuario = u.id_usuario
+      WHERE p.id_proyecto = ?
+    `, [id_proyecto]);
 
-    if (projectRows.length === 0) {
-      await connection.rollback();
-      console.log('❌ Proyecto no encontrado');
-      return res.status(404).json({ error: "Proyecto no encontrado" });
+    if (!projectData || projectData.length === 0) {
+      throw new Error("Proyecto no encontrado.");
+    }
+    const proyecto = projectData[0];
+
+    // Verificar permisos
+    if (proyecto.id_dueno_empresa !== id_usuario_solicitante) {
+      throw new Error("No tienes permiso para liberar fondos de este proyecto.");
     }
 
-    const proyecto = projectRows[0];
-    console.log('📋 Proyecto encontrado:', proyecto);
+    // 2. Obtener al Freelancer Ganador
+    const [freelancerData] = await connection.query(`
+      SELECT f.id_freelancer, f.id_usuario, CONCAT(ap.nombres, ' ', ap.apellidos) as nombre_completo
+      FROM postulacion pos
+      JOIN freelancer f ON pos.id_freelancer = f.id_freelancer
+      JOIN antecedentes_personales ap ON f.id_freelancer = ap.id_freelancer
+      WHERE pos.id_publicacion IN (SELECT id_publicacion FROM publicacion_proyecto WHERE id_proyecto = ?)
+      AND pos.estado_postulacion = 'aceptada'
+      LIMIT 1
+    `, [id_proyecto]);
 
-    // 2. Verificar que el usuario es dueño de la empresa del proyecto
-    const [empresaRows] = await connection.query(
-      `SELECT id_empresa, id_usuario 
-       FROM empresa 
-       WHERE id_empresa = ?`,
-      [proyecto.id_empresa]
-    );
-
-    if (empresaRows.length === 0) {
-      await connection.rollback();
-      console.log('❌ Empresa no encontrada');
-      return res.status(404).json({ error: "Empresa no encontrada" });
+    if (freelancerData.length === 0) {
+      throw new Error("No hay un freelancer aceptado para este proyecto.");
     }
+    const freelancer = freelancerData[0];
 
-    console.log('🏢 Empresa encontrada:', empresaRows[0]);
-    console.log('👤 Usuario actual:', id_usuario, 'Usuario dueño:', empresaRows[0].id_usuario);
-
-    if (empresaRows[0].id_usuario !== id_usuario) {
-      await connection.rollback();
-      console.log('❌ Usuario no tiene permiso');
-      return res.status(403).json({ error: "No tienes permiso para completar este proyecto" });
-    }
-
-    // 3. Verificar que existe un pago en garantía RETENIDO
+    // 3. Obtener Garantía Retenida
     const [garantiaRows] = await connection.query(
-      `SELECT * FROM PagosEnGarantia WHERE id_proyecto = ? AND estado = 'RETENIDO'`,
+      "SELECT * FROM PagosEnGarantia WHERE id_proyecto = ? AND estado = 'RETENIDO'",
       [id_proyecto]
     );
 
     if (garantiaRows.length === 0) {
-      await connection.rollback();
-      console.log('❌ No hay pago en garantía RETENIDO');
-      return res.status(400).json({ 
-        error: "No hay pago en garantía para este proyecto o ya fue procesado" 
-      });
+      throw new Error("No hay fondos retenidos disponibles para liberar.");
+    }
+    const garantia = garantiaRows[0];
+
+    // =================================================================================
+    // 🚦 LÓGICA DIFERENCIADA: CLIENTE JURÍDICO VS NATURAL
+    // =================================================================================
+    
+    if (proyecto.tipo_usuario === 'empresa_juridico') {
+        console.log('🏢 Cliente Jurídico detectado. Verificando boleta de honorarios...');
+        
+        // Verificar si existe boleta subida
+        const [boletaRows] = await connection.query(
+            "SELECT * FROM documento_tributario WHERE id_proyecto = ? AND tipo = 'boleta_honorarios'",
+            [id_proyecto]
+        );
+
+        if (boletaRows.length === 0) {
+            // Si no hay boleta, NO liberamos. Notificamos al freelancer que debe subirla.
+            await connection.rollback();
+            
+            // Opcional: Enviar notificación al freelancer aquí si quieres automatizarlo
+            // await notificarBoletaRequerida(freelancer.id_usuario, proyecto.titulo);
+
+            return res.status(400).json({
+                error: "REQUISITO_BLOQUEANTE",
+                message: "Como cliente jurídico, requieres la Boleta de Honorarios antes de liberar el pago. El freelancer debe subirla primero.",
+                actionRequired: "WAITING_FOR_INVOICE"
+            });
+        }
+        
+        console.log('✅ Boleta de honorarios encontrada.');
+    } else {
+        console.log('👤 Cliente Natural detectado. Liberación directa (con advertencia al freelancer).');
     }
 
-    const garantia = garantiaRows[0];
-    console.log('💰 Pago en garantía encontrado:', garantia);
-    
-    // 4. Calcular comisión (10%) y monto neto
-    const comision = garantia.monto_retenido * 0.10;
-    const monto_neto = garantia.monto_retenido - comision;
+    // =================================================================================
+    // 💰 CÁLCULOS Y GENERACIÓN DE DOCUMENTOS
+    // =================================================================================
 
-    console.log(`💰 Liberando pago - Monto: ${garantia.monto_retenido}, Comisión: ${comision}, Neto: ${monto_neto}`);
+    const montoTotal = Number(garantia.monto_retenido);
+    const comision = Math.round(montoTotal * 0.05); // 5% Comisión Busquidy
+    const pagoFreelancer = montoTotal - comision;    // 95% Líquido
 
-    // 5. Actualizar estado en PagosEnGarantia
+    // A. Generar FACTURA COMISIÓN (PDF)
+    const pdfFacturaUrl = await generatePDF('FACTURA_COMISION', {
+        id_proyecto: id_proyecto,
+        nombre_empresa: proyecto.nombre_empresa,
+        rut_empresa: '77.888.999-K', // Deberías sacar esto de la tabla empresa si existe columna rut
+        monto_comision: comision
+    });
+
+    // Guardar Factura en BD
     await connection.query(
-      `UPDATE PagosEnGarantia 
-       SET estado = 'LIBERADO', 
-           fecha_actualizacion = NOW()
-       WHERE id = ?`,
-      [garantia.id]
+        `INSERT INTO factura_comision (id_proyecto, id_empresa, monto_comision, url_pdf) VALUES (?, ?, ?, ?)`,
+        [id_proyecto, proyecto.id_empresa, comision, pdfFacturaUrl]
     );
 
-    console.log('✅ Estado de pago actualizado a LIBERADO');
+    // B. Generar ORDEN DE PAGO (PDF)
+    const pdfOrdenUrl = await generatePDF('ORDEN_PAGO', {
+        id_proyecto: id_proyecto,
+        titulo_proyecto: proyecto.titulo,
+        nombre_receptor: freelancer.nombre_completo,
+        rut_receptor: '12.345.678-9', // Sacar de antecedentes_personales si existe
+        monto: pagoFreelancer
+    });
 
-    // 6. Actualizar estado del proyecto a 'finalizado'
+    // Guardar Orden de Pago en BD
     await connection.query(
-      `UPDATE publicacion_proyecto 
-       SET estado_publicacion = 'finalizado'
-       WHERE id_proyecto = ?`,
-      [id_proyecto]
+        `INSERT INTO orden_pago (id_proyecto, id_usuario_receptor, monto, tipo, estado, url_pdf) 
+         VALUES (?, ?, ?, 'pago_honorario', 'pendiente', ?)`,
+        [id_proyecto, freelancer.id_usuario, pagoFreelancer, pdfOrdenUrl]
     );
 
-    console.log('✅ Estado del proyecto actualizado a finalizado');
+    // =================================================================================
+    // ✅ FINALIZAR PROCESO
+    // =================================================================================
+
+    // Actualizar estados
+    await connection.query("UPDATE PagosEnGarantia SET estado = 'LIBERADO', fecha_actualizacion = NOW() WHERE id = ?", [garantia.id]);
+    await connection.query("UPDATE publicacion_proyecto SET estado_publicacion = 'finalizado' WHERE id_proyecto = ?", [id_proyecto]);
 
     await connection.commit();
-    console.log('✅ Transacción completada exitosamente');
 
-    res.status(200).json({
-      success: true,
-      message: "Pago liberado exitosamente al freelancer",
-      data: {
-        monto_total: garantia.monto_retenido,
-        comision: comision,
-        monto_freelancer: monto_neto
-      }
+    // Notificar (Asíncrono)
+    try {
+        // Al Freelancer: Dinero liberado + Recordatorio de impuestos (si es natural) o confirmación
+        const mensajeFreelancer = proyecto.tipo_usuario === 'empresa_natural' 
+            ? `¡Pago liberado! Recibirás $${pagoFreelancer}. Recuerda declarar este ingreso en tu F22.`
+            : `¡Pago liberado! Tu boleta ha sido aceptada y recibirás $${pagoFreelancer}.`;
+            
+        // Usar tu servicio de notificaciones existente (ajusta según tus funciones reales)
+        // await notificarPagoLiberado(freelancer.id_usuario, mensajeFreelancer, pdfOrdenUrl);
+        
+        // Al Cliente: Factura disponible
+        // await notificarFacturaDisponible(proyecto.id_dueno_empresa, pdfFacturaUrl);
+    } catch (notifError) {
+        console.error("Error enviando notificaciones post-liberación:", notifError);
+    }
+
+    res.json({
+        success: true,
+        message: "Fondos liberados exitosamente.",
+        documents: {
+            factura_comision: pdfFacturaUrl,
+            orden_pago: pdfOrdenUrl
+        },
+        financials: {
+            total: montoTotal,
+            comision: comision,
+            pago_freelancer: pagoFreelancer
+        }
     });
 
   } catch (error) {
-    console.error("❌ Error al liberar pago:", error);
     if (connection) await connection.rollback();
-    res.status(500).json({ 
-      error: "Error al liberar el pago",
-      mensaje: error.message 
-    });
+    console.error("Error en releaseProjectPayment:", error);
+    res.status(500).json({ error: error.message });
   } finally {
     if (connection) connection.release();
   }
