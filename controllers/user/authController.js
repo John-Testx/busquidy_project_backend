@@ -167,10 +167,10 @@ const login = async (req, res) => {
     }
 
     const user = result[0];
-    console.log("Hash almacenado:", user.contraseña);
+    console.log("Hash almacenado:", user.password);
 
     // Verificar la contraseña
-    const isPasswordValid = await bcrypt.compare(contraseña, user.contraseña);
+    const isPasswordValid = await bcrypt.compare(contraseña, user.password);
     console.log("¿Contraseña válida?", isPasswordValid);
 
     if (!isPasswordValid) {

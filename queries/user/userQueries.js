@@ -92,7 +92,7 @@ const existsUserByEmail = async (correo) => {
  */
 const insertUser = async (correo, hashedPassword, tipo_usuario, connection = pool) => {
   const [result] = await connection.query(
-    "INSERT INTO usuario (correo, contraseña, tipo_usuario) VALUES (?, ?, ?)",
+    "INSERT INTO usuario (correo, password, tipo_usuario) VALUES (?, ?, ?)",
     [correo, hashedPassword, tipo_usuario]
   );
   return result.insertId;
@@ -132,7 +132,7 @@ const updateUserDetails = async (id_usuario, correo, rol_usuario, tipo_usuario) 
  */
 const updateUserPassword = async (id_usuario, hashedPassword) => {
   const [result] = await pool.query(
-    "UPDATE usuario SET contraseña = ? WHERE id_usuario = ?",
+    "UPDATE usuario SET password = ? WHERE id_usuario = ?",
     [hashedPassword, id_usuario]
   );
   return result.affectedRows > 0;
@@ -224,7 +224,7 @@ const findUserByResetToken = async (hashedToken) => {
 const updatePasswordAndClearToken = async (id_usuario, hashedPassword) => {
   const query = `
     UPDATE usuario 
-    SET contraseña = ?, reset_token = NULL, reset_token_expires = NULL
+    SET password = ?, reset_token = NULL, reset_token_expires = NULL
     WHERE id_usuario = ?
   `;
   const [result] = await pool.query(query, [hashedPassword, id_usuario]);
